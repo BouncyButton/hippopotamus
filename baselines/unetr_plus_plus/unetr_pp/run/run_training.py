@@ -135,7 +135,7 @@ def main():
     if trainer_class is None:
         raise RuntimeError("Could not find trainer class in unetr_pp.training.network_training")
 
-    if "eneral" in trainer_class.__class__:
+    if "eneral" in trainer_class.__name__:
         trainer = trainer_class(plans_file, fold, output_folder=output_folder_name, dataset_directory=dataset_directory,
                                 batch_dice=batch_dice, stage=stage, unpack_data=decompress_data,
                                 deterministic=deterministic, fp16=run_mixed_precision, crop_size_x=crop_size_x,
