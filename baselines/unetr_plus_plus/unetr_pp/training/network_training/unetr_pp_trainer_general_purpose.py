@@ -27,7 +27,7 @@ from unetr_pp.network_architecture.neural_network import SegmentationNetwork
 from unetr_pp.training.data_augmentation.default_data_augmentation import default_2D_augmentation_params, \
     get_patch_size, default_3D_augmentation_params
 from unetr_pp.training.dataloading.dataset_loading import unpack_dataset
-from unetr_pp.training.network_training.TrainerGeneralPurpose import TrainerGeneralPurpose
+from unetr_pp.training.network_training.Trainer_general_purpose import TrainerGeneralPurpose
 from unetr_pp.utilities.nd_softmax import softmax_helper
 from sklearn.model_selection import KFold
 from torch import nn
