@@ -89,6 +89,8 @@ def main():
                         help='path to nnU-Net checkpoint file to be used as pretrained model (use .model '
                              'file, for example model_final_checkpoint.model). Will only be used when actually training. '
                              'Optional. Beta. Use with caution.')
+    parser.add_argument('--crop_size', type=int, nargs='+', default=None,
+                        help='Crop size to use for training. Default: None (use patch size from plans)')
 
     args = parser.parse_args()
 
@@ -110,6 +112,12 @@ def main():
     fp32 = args.fp32
     run_mixed_precision = not fp32
 
+    crop_size_x, crop_size_y, crop_size_z = None, None, None
+    if args.crop_size is not None:
+        if len(args.crop_size) != 3:
+            raise ValueError("Crop size must be a list of three integers")
+        crop_size_x, crop_size_y, crop_size_z = args.crop_size
+
     val_folder = args.val_folder
 
     if not task.startswith("Task"):
@@ -127,10 +135,16 @@ def main():
     if trainer_class is None:
         raise RuntimeError("Could not find trainer class in unetr_pp.training.network_training")
 
+    if "eneral" in trainer_class.__class__:
+        trainer = trainer_class(plans_file, fold, output_folder=output_folder_name, dataset_directory=dataset_directory,
+                                batch_dice=batch_dice, stage=stage, unpack_data=decompress_data,
+                                deterministic=deterministic, fp16=run_mixed_precision, crop_size_x=crop_size_x,
+                                crop_size_y=crop_size_y, crop_size_z=crop_size_z)
 
-    trainer = trainer_class(plans_file, fold, output_folder=output_folder_name, dataset_directory=dataset_directory,
-                            batch_dice=batch_dice, stage=stage, unpack_data=decompress_data,
-                            deterministic=deterministic, fp16=run_mixed_precision)
+    else:
+        trainer = trainer_class(plans_file, fold, output_folder=output_folder_name, dataset_directory=dataset_directory,
+                                batch_dice=batch_dice, stage=stage, unpack_data=decompress_data,
+                                deterministic=deterministic, fp16=run_mixed_precision)
     if args.disable_saving:
         trainer.save_final_checkpoint = False  # whether or not to save the final checkpoint
         trainer.save_best_checkpoint = False  # whether or not to save the best checkpoint according to

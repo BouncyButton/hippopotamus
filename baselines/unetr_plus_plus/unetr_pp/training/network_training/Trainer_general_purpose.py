@@ -705,8 +705,8 @@ class TrainerGeneralPurpose(NetworkTrainerGeneralPurpose):
             fn_hard = torch.zeros((target.shape[0], 8)).to(output_seg.device.index)
             i=0
             for c in range(1, num_classes):
-                if c in [10,12,13,5,9]:
-                    continue
+                # if c in [10,12,13,5,9]:
+                #     continue
                 tp_hard[:, i] = sum_tensor((output_seg == c).float() * (target == c).float(), axes=axes)
                 fp_hard[:, i] = sum_tensor((output_seg == c).float() * (target != c).float(), axes=axes)
                 fn_hard[:, i] = sum_tensor((output_seg != c).float() * (target == c).float(), axes=axes)

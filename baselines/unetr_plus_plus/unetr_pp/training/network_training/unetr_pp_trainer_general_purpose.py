@@ -43,7 +43,7 @@ class unetr_pp_trainer_general_purpose(TrainerGeneralPurpose):
     """
 
     def __init__(self, plans_file, fold, output_folder=None, dataset_directory=None, batch_dice=True, stage=None,
-                 unpack_data=True, deterministic=True, fp16=False):
+                 unpack_data=True, deterministic=True, fp16=False, crop_size_x=64, crop_size_y=128, crop_size_z=128):
         super().__init__(plans_file, fold, output_folder, dataset_directory, batch_dice, stage, unpack_data,
                          deterministic, fp16)
         self.max_num_epochs = 1000
@@ -55,7 +55,7 @@ class unetr_pp_trainer_general_purpose(TrainerGeneralPurpose):
 
         self.load_plans_file()
 
-        self.crop_size = [64, 128, 128]
+        self.crop_size = [crop_size_x, crop_size_y, crop_size_z]
         self.input_channels = self.plans['num_modalities']
         self.num_classes = self.plans['num_classes'] + 1
         self.conv_op = nn.Conv3d
