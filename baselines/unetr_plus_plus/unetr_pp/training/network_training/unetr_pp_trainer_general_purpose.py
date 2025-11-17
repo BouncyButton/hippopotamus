@@ -178,9 +178,9 @@ class unetr_pp_trainer_general_purpose(TrainerGeneralPurpose):
         input = torch.ones(()).new_empty((1, *input_res), dtype=next(self.network.parameters()).dtype,
                                          device=next(self.network.parameters()).device)
         flops = FlopCountAnalysis(self.network, input)
-        model_flops = flops.total()
+        # model_flops = flops.total()
         print(f"Total trainable parameters: {round(n_parameters * 1e-6, 2)} M")
-        print(f"MAdds: {round(model_flops * 1e-9, 2)} G")
+        # print(f"MAdds: {round(model_flops * 1e-9, 2)} G")
 
     def initialize_optimizer_and_scheduler(self):
         assert self.network is not None, "self.initialize_network must be called first"
