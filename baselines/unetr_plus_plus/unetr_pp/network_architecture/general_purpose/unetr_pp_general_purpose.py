@@ -126,7 +126,7 @@ class UNETR_PP(SegmentationNetwork):
             self.out3 = UnetOutBlock(spatial_dims=3, in_channels=feature_size * 4, out_channels=out_channels)
 
     def proj_feat(self, x, hidden_size, feat_size):
-        x = x.view(x.size(0), feat_size[0], feat_size[1], feat_size[2], hidden_size)
+        x = x.view(x.size(0), feat_size[0], feat_size[1], feat_size[2], -1)
         x = x.permute(0, 4, 1, 2, 3).contiguous()
         return x
 
