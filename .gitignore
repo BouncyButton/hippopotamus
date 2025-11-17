@@ -1,0 +1,10 @@
+baselines/nnUNet/nnUNet_raw
+baselines/nnUNet/nnUNet_preprocessed
+baselines/nnUNet/nnUNet_results
+.DS_Store
+.idea
+browseruse/
+datasets/*/imagesTr/*
+datasets/*/imagesTs/*
+datasets/*/labelsTr/*
+proposal
