@@ -53,6 +53,14 @@ class TransformerBlock(nn.Module):
         B, C, H, W, D = x.shape
         print("B,C,H,W,D:", B, C, H, W, D)
 
+        # shape of data: torch.Size([2, 1, 40, 56, 40])
+        # B,C,H,W,D: 2 32 20 14 10
+        # X: torch.Size([2, 2800, 32])
+        # pos embed: torch.Size([1, 63700, 32])
+
+        # then everything crashes :(
+        # i guess i have to understand better how the input_size/pos_embed parameters should be initialized.
+
         x = x.reshape(B, C, H * W * D).permute(0, 2, 1)
         print("X:", x.shape)
         print("pos embed:", self.pos_embed.shape)

@@ -73,7 +73,8 @@ class UNETR_PP(SegmentationNetwork):
         )
         self.hidden_size = hidden_size
 
-        first = img_size[0] * img_size[1] * img_size[2]
+
+        first = img_size[0] // self.patch_size[0] * img_size[1] // self.patch_size[1] * img_size[2] // self.patch_size[2]
         input_size = [first, first // 8, first // 64, first // 512]
         print("Input sizes for each stage: ", input_size)
         print("Feature sizes for each stage: ", self.feat_size)
