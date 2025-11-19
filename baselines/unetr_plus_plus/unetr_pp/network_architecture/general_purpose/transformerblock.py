@@ -51,6 +51,7 @@ class TransformerBlock(nn.Module):
 
     def forward(self, x):
         B, C, H, W, D = x.shape
+        print("B,C,H,W,D:", B, C, H, W, D)
 
         x = x.reshape(B, C, H * W * D).permute(0, 2, 1)
         print("X:", x.shape)
