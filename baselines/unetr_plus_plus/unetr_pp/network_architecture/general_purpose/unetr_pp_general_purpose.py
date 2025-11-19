@@ -75,6 +75,10 @@ class UNETR_PP(SegmentationNetwork):
 
         first = img_size[0] * img_size[1] * img_size[2]
         input_size = [first, first // 8, first // 64, first // 512]
+        print("Input sizes for each stage: ", input_size)
+        print("Feature sizes for each stage: ", self.feat_size)
+        print("Hidden size: ", self.hidden_size)
+        print("Dims for each stage: ", dims)
         self.unetr_pp_encoder = UnetrPPEncoder(dims=dims, depths=depths, num_heads=num_heads, input_size=input_size)
 
         self.encoder1 = UnetResBlock(
