@@ -11,10 +11,18 @@ from unetr_pp.network_architecture.dynunet_block import get_conv_layer, UnetResB
 einops, _ = optional_import("einops")
 
 class UnetrPPEncoder(nn.Module):
-    def __init__(self, input_size=[32 * 32 * 32, 16 * 16 * 16, 8 * 8 * 8, 4 * 4 * 4],dims=[32, 64, 128, 256],
-                 proj_size =[64,64,64,32], depths=[3, 3, 3, 3],  num_heads=4, spatial_dims=3, in_channels=1, dropout=0.0, transformer_dropout_rate=0.15 ,**kwargs):
+    def __init__(self, input_size=None, dims=None,
+                 proj_size=None, depths=None, num_heads=4, spatial_dims=3, in_channels=1, dropout=0.0, transformer_dropout_rate=0.15, **kwargs):
         super().__init__()
 
+        if depths is None:
+            depths = [3, 3, 3, 3]
+        if proj_size is None:
+            proj_size = [64, 64, 64, 32]
+        if dims is None:
+            dims = [32, 64, 128, 256]
+        if input_size is None:
+            input_size = [32 * 32 * 32, 16 * 16 * 16, 8 * 8 * 8, 4 * 4 * 4]
         self.downsample_layers = nn.ModuleList()  # stem and 3 intermediate downsampling conv layers
         stem_layer = nn.Sequential(
             get_conv_layer(spatial_dims, in_channels, dims[0], kernel_size=(2, 4, 4), stride=(2, 4, 4),
