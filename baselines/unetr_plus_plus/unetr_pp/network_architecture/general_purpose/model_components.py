@@ -23,6 +23,12 @@ class UnetrPPEncoder(nn.Module):
             dims = [32, 64, 128, 256]
         if input_size is None:
             input_size = [32 * 32 * 32, 16 * 16 * 16, 8 * 8 * 8, 4 * 4 * 4]
+
+        print("Encoder input sizes:", input_size)
+        print("Encoder dims:", dims)
+        print("Encoder proj sizes:", proj_size)
+        print("Encoder depths:", depths)
+
         self.downsample_layers = nn.ModuleList()  # stem and 3 intermediate downsampling conv layers
         stem_layer = nn.Sequential(
             get_conv_layer(spatial_dims, in_channels, dims[0], kernel_size=(2, 4, 4), stride=(2, 4, 4),
