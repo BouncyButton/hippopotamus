@@ -73,7 +73,9 @@ class UNETR_PP(SegmentationNetwork):
         )
         self.hidden_size = hidden_size
 
-        self.unetr_pp_encoder = UnetrPPEncoder(dims=dims, depths=depths, num_heads=num_heads)
+        first = img_size[0] * img_size[1] * img_size[2]
+        input_size = [first, first // 8, first // 64, first // 512]
+        self.unetr_pp_encoder = UnetrPPEncoder(dims=dims, depths=depths, num_heads=num_heads, input_size=input_size)
 
         self.encoder1 = UnetResBlock(
             spatial_dims=3,
@@ -126,7 +128,7 @@ class UNETR_PP(SegmentationNetwork):
             self.out3 = UnetOutBlock(spatial_dims=3, in_channels=feature_size * 4, out_channels=out_channels)
 
     def proj_feat(self, x, hidden_size, feat_size):
-        x = x.reshape(x.size(0), feat_size[0], feat_size[1], feat_size[2], -1)
+        x = x.view(x.size(0), feat_size[0], feat_size[1], feat_size[2], hidden_size)
         x = x.permute(0, 4, 1, 2, 3).contiguous()
         return x
 
