@@ -152,16 +152,16 @@ class UNETR_PP(SegmentationNetwork):
         # Four decoders
         dec4 = self.proj_feat(enc4, self.hidden_size, self.feat_size)
         # i know it's not the best thing but i'll fix the dims as follows
-        enc3 = enc3[:, :, :dec4.shape[2], :dec4.shape[3], :dec4.shape[4]]
+        enc3 = enc3[:, :, :dec4.shape[2] * 2, :dec4.shape[3] * 2, :dec4.shape[4] * 2]
 
         print("enc3 and dec4: ", enc3.shape, dec4.shape)
 
         dec3 = self.decoder5(dec4, enc3)
-        enc2 = enc2[:, :, :dec3.shape[2], :dec3.shape[3], :dec3.shape[4]]
+        enc2 = enc2[:, :, :dec3.shape[2] * 2, :dec3.shape[3] * 2, :dec3.shape[4] * 2]
         print("enc2 and dec3: ", enc2.shape, dec3.shape)
 
         dec2 = self.decoder4(dec3, enc2)
-        enc1 = enc1[:, :, :dec2.shape[2], :dec2.shape[3], :dec2.shape[4]]
+        enc1 = enc1[:, :, :dec2.shape[2] * 2, :dec2.shape[3] * 2, :dec2.shape[4] * 2]
         print("enc1 and dec2: ", enc1.shape, dec2.shape)
         dec1 = self.decoder3(dec2, enc1)
 
