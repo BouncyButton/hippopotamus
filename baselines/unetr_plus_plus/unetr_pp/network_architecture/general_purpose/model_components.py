@@ -51,8 +51,9 @@ class UnetrPPEncoder(nn.Module):
         print("Calculated input size after downsample:", input_size[0])
 
         # then the other inputs SHOULD be calculated based on that
-        for i in range(1, 4):
-            input_size[i] = input_size[i - 1] // 8
+        # for i in range(1, 4):
+        #     input_size[i] = input_size[i - 1] // 8
+        # DOESNT WORK; falling back to previous method of calculation
 
         for i in range(3):
             downsample_layer = nn.Sequential(
@@ -61,6 +62,13 @@ class UnetrPPEncoder(nn.Module):
                 get_norm_layer(name=("group", {"num_groups": dims[i]}), channels=dims[i + 1]),
             )
             self.downsample_layers.append(downsample_layer)
+
+            x = torch.rand(1, 1, h, w, d)
+            x = self.stages[i](x)
+            _, _, h, w, d = x.shape
+            if i < 4:
+                input_size[i + 1] = h * w * d
+                print(f"Calculated input size after downsample {i + 1}:", input_size[i + 1])
 
         self.stages = nn.ModuleList()  # 4 feature resolution stages, each consisting of multiple Transformer blocks
         for i in range(4):
