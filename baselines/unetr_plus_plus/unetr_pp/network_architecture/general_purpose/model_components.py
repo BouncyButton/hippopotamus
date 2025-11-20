@@ -102,7 +102,7 @@ class UnetrPPEncoder(nn.Module):
 
         for i in range(1, 4):
             x = self.downsample_layers[i](x)
-            if any([s % 2 != 0 for s in x.shape]):
+            if any([s % 2 != 0 for s in x.shape]) and i != 3:
                 # fix by cropping if the size is odd
                 x = x[
                     :,
