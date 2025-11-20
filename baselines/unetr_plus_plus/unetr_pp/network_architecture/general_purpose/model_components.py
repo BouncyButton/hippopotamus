@@ -85,7 +85,7 @@ class UnetrPPEncoder(nn.Module):
 
     def forward_features(self, x):
         hidden_states = []
-
+        print("forward_features input x shape:", x.shape)
         x = self.downsample_layers[0](x)
         x = self.stages[0](x)
 
