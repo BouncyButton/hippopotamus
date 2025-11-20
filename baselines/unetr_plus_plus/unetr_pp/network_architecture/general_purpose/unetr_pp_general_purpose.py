@@ -197,10 +197,15 @@ class UNETR_PP(SegmentationNetwork):
         out = self.decoder2(dec1, convBlock)
         if self.do_ds:
             logits = [self.out1(out), self.out2(dec1), self.out3(dec2)]
+
+            # crop back to the original size
+            logits = [crop_to_input(logit, x_in.shape[2:]) for logit in logits]
+
+
         else:
             logits = self.out1(out)
 
-        # crop back to the original size
-        logits = crop_to_input(logits, x_in.shape[2:])
+            # crop back to the original size
+            logits = crop_to_input(logits, x_in.shape[2:])
 
         return logits
