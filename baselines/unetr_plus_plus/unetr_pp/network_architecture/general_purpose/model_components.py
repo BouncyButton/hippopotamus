@@ -42,7 +42,7 @@ class UnetrPPEncoder(nn.Module):
 
         # calculate dimension of the input after stem layer
         x = torch.rand(1, in_channels, img_size[0], img_size[1], img_size[2])
-        x = stem_layer(x)
+        x = self.downsample_layers[0](x)
         _, _, h, w, d = x.shape
         input_size[0] = h * w * d
 
