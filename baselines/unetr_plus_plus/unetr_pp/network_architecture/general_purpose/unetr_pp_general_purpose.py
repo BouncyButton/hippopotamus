@@ -121,7 +121,7 @@ class UNETR_PP(SegmentationNetwork):
             kernel_size=3,
             upsample_kernel_size=2,
             norm_name=norm_name,
-            out_size=6 * 12 * 6 / 2,
+            out_size=6 * 12 * 6 // 2,
         )
         self.decoder4 = UnetrUpBlock(
             spatial_dims=3,
