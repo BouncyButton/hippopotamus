@@ -26,6 +26,7 @@ def crop_to_input(x, original_shape):
     # original_shape: (H_in, W_in, D_in)
     H_in, W_in, D_in = original_shape
     print("hwd to crop", H_in, W_in, D_in)
+    print("x to crop:", x.shape)
     return x[:, :, :H_in, :W_in, :D_in]
 
 
