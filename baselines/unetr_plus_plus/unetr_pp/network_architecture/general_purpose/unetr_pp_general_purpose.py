@@ -166,6 +166,7 @@ class UNETR_PP(SegmentationNetwork):
 
     def forward(self, x_in):
         # pad the imgs to 64x64x64
+        original_shape = x_in.shape[2:]
         x_in = pad_to_multiple(x_in, mult=(16, 16, 16))
 
         x_output, hidden_states = self.unetr_pp_encoder(x_in)
@@ -197,15 +198,14 @@ class UNETR_PP(SegmentationNetwork):
         out = self.decoder2(dec1, convBlock)
         if self.do_ds:
             logits = [self.out1(out), self.out2(dec1), self.out3(dec2)]
-
+            print([logit.shape for logit in logits])
             # crop back to the original size
-            logits = [crop_to_input(logit, x_in.shape[2:]) for logit in logits]
-
+            logits = [crop_to_input(logit, original_shape) for logit in logits]
 
         else:
             logits = self.out1(out)
 
             # crop back to the original size
-            logits = crop_to_input(logits, x_in.shape[2:])
+            logits = crop_to_input(logits, original_shape)
 
         return logits
