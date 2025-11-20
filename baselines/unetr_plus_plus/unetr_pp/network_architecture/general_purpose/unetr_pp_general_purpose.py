@@ -65,7 +65,7 @@ class UNETR_PP(SegmentationNetwork):
         if pos_embed not in ["conv", "perceptron"]:
             raise KeyError(f"Position embedding layer of type {pos_embed} is not supported.")
 
-        self.patch_size = (2, 4, 4)
+        self.patch_size = (2, 2, 2)
         self.feat_size = (
             img_size[0] // self.patch_size[0] // 8,  # 8 is the downsampling happened through the four encoders stages
             img_size[1] // self.patch_size[1] // 8,  # 8 is the downsampling happened through the four encoders stages
@@ -97,7 +97,7 @@ class UNETR_PP(SegmentationNetwork):
             kernel_size=3,
             upsample_kernel_size=2,
             norm_name=norm_name,
-            out_size=self.patch_size[0] * self.patch_size[1] * self.patch_size[2] // 2,
+            out_size=5*7*5,
         )
         self.decoder4 = UnetrUpBlock(
             spatial_dims=3,
@@ -106,7 +106,7 @@ class UNETR_PP(SegmentationNetwork):
             kernel_size=3,
             upsample_kernel_size=2,
             norm_name=norm_name,
-            out_size=self.patch_size[0] * self.patch_size[1] * self.patch_size[2] * 4,
+            out_size=10*14*10
         )
         self.decoder3 = UnetrUpBlock(
             spatial_dims=3,
@@ -115,17 +115,16 @@ class UNETR_PP(SegmentationNetwork):
             kernel_size=3,
             upsample_kernel_size=2,
             norm_name=norm_name,
-            out_size=self.patch_size[0] * self.patch_size[1] * self.patch_size[2] * 32,
+            out_size=20*28*20,
         )
         self.decoder2 = UnetrUpBlock(
             spatial_dims=3,
             in_channels=feature_size * 2,
             out_channels=feature_size,
             kernel_size=3,
-            upsample_kernel_size=(2, 4, 4),
+            upsample_kernel_size=2,
             norm_name=norm_name,
-            out_size=img_size,
-            # reasonably by now this is ok if the dims of the img are divisible by 2
+            out_size=40*56*40,
             conv_decoder=True,
         )
         self.out1 = UnetOutBlock(spatial_dims=3, in_channels=feature_size, out_channels=out_channels)
