@@ -47,6 +47,7 @@ class UnetrPPEncoder(nn.Module):
         _, _, h, w, d = x.shape
         input_size[0] = h * w * d
 
+        print("i got h,w,d:", h, w, d)
         print("Calculated input size after downsample:", input_size[0])
 
         # then the other inputs SHOULD be calculated based on that
