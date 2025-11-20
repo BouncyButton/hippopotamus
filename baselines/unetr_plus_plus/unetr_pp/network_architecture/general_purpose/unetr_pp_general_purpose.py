@@ -124,7 +124,7 @@ class UNETR_PP(SegmentationNetwork):
             kernel_size=3,
             upsample_kernel_size=(2, 4, 4),
             norm_name=norm_name,
-            out_size=self.patch_size[0] * self.patch_size[1] * self.patch_size[2] * 32 * 8,
+            out_size=img_size,
             # reasonably by now this is ok if the dims of the img are divisible by 2
             conv_decoder=True,
         )
