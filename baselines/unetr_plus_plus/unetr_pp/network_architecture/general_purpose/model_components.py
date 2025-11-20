@@ -102,6 +102,15 @@ class UnetrPPEncoder(nn.Module):
 
         for i in range(1, 4):
             x = self.downsample_layers[i](x)
+            if any([s % 2 != 0 for s in x.shape]):
+                # fix by cropping if the size is odd
+                x = x[
+                    :,
+                    :,
+                    : x.shape[2] - (x.shape[2] % 2),
+                    : x.shape[3] - (x.shape[3] % 2),
+                    : x.shape[4] - (x.shape[4] % 2),
+                ]
             x = self.stages[i](x)
             if i == 3:  # Reshape the output of the last stage
                 x = einops.rearrange(x, "b c h w d -> b (h w d) c")
