@@ -4,6 +4,29 @@ from unetr_pp.network_architecture.neural_network import SegmentationNetwork
 from unetr_pp.network_architecture.dynunet_block import UnetOutBlock, UnetResBlock
 from unetr_pp.network_architecture.general_purpose.model_components import UnetrPPEncoder, UnetrUpBlock
 
+import torch.nn.functional as F
+
+
+def pad_to_multiple(x, mult=(16, 16, 16)):
+    # x: (B,C,H,W,D)
+    H, W, D = x.shape[2:]
+    pad_H = (mult[0] - H % mult[0]) % mult[0]
+    pad_W = (mult[1] - W % mult[1]) % mult[1]
+    pad_D = (mult[2] - D % mult[2]) % mult[2]
+
+    pad = (pad_D // 2, pad_D - pad_D // 2,
+           pad_W // 2, pad_W - pad_W // 2,
+           pad_H // 2, pad_H - pad_H // 2)
+
+    return F.pad(x, pad)
+
+
+def crop_to_input(x, original_shape):
+    # x: (B,C,H,W,D) after UNet
+    # original_shape: (H_in, W_in, D_in)
+    H_in, W_in, D_in = original_shape
+    return x[:, :, :H_in, :W_in, :D_in]
+
 
 class UNETR_PP(SegmentationNetwork):
     """
@@ -74,7 +97,8 @@ class UNETR_PP(SegmentationNetwork):
         self.hidden_size = hidden_size
 
         print("Image size: ", img_size)
-        first = (img_size[0] // self.patch_size[0]) * (img_size[1] // self.patch_size[1]) * (img_size[2] // self.patch_size[2])
+        first = (img_size[0] // self.patch_size[0]) * (img_size[1] // self.patch_size[1]) * (
+                    img_size[2] // self.patch_size[2])
         input_size = [first, first // 8, first // 64, first // 512]
         print("Input sizes for each stage: ", input_size)
         print("Feature sizes for each stage: ", self.feat_size)
@@ -97,7 +121,7 @@ class UNETR_PP(SegmentationNetwork):
             kernel_size=3,
             upsample_kernel_size=2,
             norm_name=norm_name,
-            out_size=5*7*5,
+            out_size=6 * 12 * 6,
         )
         self.decoder4 = UnetrUpBlock(
             spatial_dims=3,
@@ -106,7 +130,7 @@ class UNETR_PP(SegmentationNetwork):
             kernel_size=3,
             upsample_kernel_size=2,
             norm_name=norm_name,
-            out_size=10*14*10
+            out_size=10 * 14 * 10,
         )
         self.decoder3 = UnetrUpBlock(
             spatial_dims=3,
@@ -115,7 +139,7 @@ class UNETR_PP(SegmentationNetwork):
             kernel_size=3,
             upsample_kernel_size=2,
             norm_name=norm_name,
-            out_size=20*28*20,
+            out_size=20 * 28 * 20,
         )
         self.decoder2 = UnetrUpBlock(
             spatial_dims=3,
@@ -124,7 +148,7 @@ class UNETR_PP(SegmentationNetwork):
             kernel_size=3,
             upsample_kernel_size=2,
             norm_name=norm_name,
-            out_size=40*56*40,
+            out_size=40 * 56 * 40,
             conv_decoder=True,
         )
         self.out1 = UnetOutBlock(spatial_dims=3, in_channels=feature_size, out_channels=out_channels)
@@ -139,6 +163,9 @@ class UNETR_PP(SegmentationNetwork):
         return x
 
     def forward(self, x_in):
+        # pad the imgs to 64x64x64
+        x_in = pad_to_multiple(x_in, mult=(16, 16, 16))
+
         x_output, hidden_states = self.unetr_pp_encoder(x_in)
 
         convBlock = self.encoder1(x_in)
@@ -170,5 +197,8 @@ class UNETR_PP(SegmentationNetwork):
             logits = [self.out1(out), self.out2(dec1), self.out3(dec2)]
         else:
             logits = self.out1(out)
+
+        # crop back to the original size
+        logits = crop_to_input(logits, x_in.shape[2:])
 
         return logits
