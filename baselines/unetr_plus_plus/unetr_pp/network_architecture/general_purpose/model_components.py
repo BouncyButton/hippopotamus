@@ -41,12 +41,13 @@ class UnetrPPEncoder(nn.Module):
         self.downsample_layers.append(stem_layer)
 
         # calculate dimension of the input after stem layer
+        print("calculating input size using img_size:", img_size)
         x = torch.rand(1, in_channels, img_size[0], img_size[1], img_size[2])
         x = self.downsample_layers[0](x)
         _, _, h, w, d = x.shape
         input_size[0] = h * w * d
 
-        print("Calculated input size after stem:", input_size[0])
+        print("Calculated input size after downsample:", input_size[0])
 
         # then the other inputs SHOULD be calculated based on that
         for i in range(1, 4):
