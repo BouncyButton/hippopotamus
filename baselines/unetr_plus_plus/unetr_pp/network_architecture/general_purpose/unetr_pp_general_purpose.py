@@ -24,7 +24,8 @@ def pad_to_multiple(x, mult=(16, 16, 16)):
 def crop_to_input(x, original_shape):
     # x: (B,C,H,W,D) after UNet
     # original_shape: (H_in, W_in, D_in)
-    _, _, H_in, W_in, D_in = original_shape
+    H_in, W_in, D_in = original_shape
+    print("hwd to crop", H_in, W_in, D_in)
     return x[:, :, :H_in, :W_in, :D_in]
 
 
