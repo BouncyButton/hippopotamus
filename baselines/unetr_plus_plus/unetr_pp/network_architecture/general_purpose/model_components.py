@@ -78,6 +78,7 @@ class UnetrPPEncoder(nn.Module):
             self.stages.append(nn.Sequential(*stage_blocks))
         self.hidden_states = []
         self.apply(self._init_weights)
+        self.input_size = input_size
 
     def _init_weights(self, m):
         if isinstance(m, (nn.Conv2d, nn.Linear)):
