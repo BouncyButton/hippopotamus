@@ -115,7 +115,7 @@ class UNETR_PP(SegmentationNetwork):
             kernel_size=3,
             upsample_kernel_size=2,
             norm_name=norm_name,
-            out_size=self.patch_size[0] * self.patch_size[1] * self.patch_size[2] * 16,
+            out_size=self.patch_size[0] * self.patch_size[1] * self.patch_size[2] * 8,
         )
         self.decoder2 = UnetrUpBlock(
             spatial_dims=3,
@@ -124,7 +124,7 @@ class UNETR_PP(SegmentationNetwork):
             kernel_size=3,
             upsample_kernel_size=(2, 4, 4),
             norm_name=norm_name,
-            out_size=self.patch_size[0] * self.patch_size[1] * self.patch_size[2] * 64,
+            out_size=self.patch_size[0] * self.patch_size[1] * self.patch_size[2] * 16,
             # reasonably by now this is ok if the dims of the img are divisible by 2
             conv_decoder=True,
         )
