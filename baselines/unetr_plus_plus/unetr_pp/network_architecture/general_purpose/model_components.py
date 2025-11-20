@@ -66,7 +66,8 @@ class UnetrPPEncoder(nn.Module):
             self.downsample_layers.append(downsample_layer)
             x = downsample_layer(x)
             _, _, h, w, d = x.shape
-            h, w, d = h >> 1 << 1, w >> 1 << 1, d >> 1 << 1
+            if i < 2:
+                h, w, d = h >> 1 << 1, w >> 1 << 1, d >> 1 << 1
             input_size[i + 1] = h * w * d
             print(f"Calculated input size after downsample {i + 1}:", input_size[i + 1])
 
