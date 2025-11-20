@@ -200,7 +200,9 @@ class UNETR_PP(SegmentationNetwork):
             logits = [self.out1(out), self.out2(dec1), self.out3(dec2)]
             print([logit.shape for logit in logits])
             # crop back to the original size
-            logits = [crop_to_input(logit, original_shape) for logit in logits]
+            logits[0] = crop_to_input(logits[0], original_shape)
+            logits[1] = crop_to_input(logits[1], (original_shape[0] // 2, original_shape[1] // 2, original_shape[2] // 2))
+            logits[2] = crop_to_input(logits[2], (original_shape[0] // 4, original_shape[1] // 4, original_shape[2] // 4))
 
         else:
             logits = self.out1(out)
