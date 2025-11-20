@@ -133,6 +133,7 @@ class UNETR_PP(SegmentationNetwork):
             self.out3 = UnetOutBlock(spatial_dims=3, in_channels=feature_size * 4, out_channels=out_channels)
 
     def proj_feat(self, x, hidden_size, feat_size):
+        print(f"proj_feat {x.shape} with hidden size:", hidden_size, "and feat size:", feat_size)
         x = x.view(x.size(0), feat_size[0], feat_size[1], feat_size[2], hidden_size)
         x = x.permute(0, 4, 1, 2, 3).contiguous()
         return x
@@ -150,6 +151,7 @@ class UNETR_PP(SegmentationNetwork):
 
         # Four decoders
         dec4 = self.proj_feat(enc4, self.hidden_size, self.feat_size)
+        print("Decoder 4 input shape:", dec4.shape, "enc3 shape:", enc3.shape)
         dec3 = self.decoder5(dec4, enc3)
         dec2 = self.decoder4(dec3, enc2)
         dec1 = self.decoder3(dec2, enc1)
