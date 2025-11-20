@@ -80,7 +80,7 @@ class UNETR_PP(SegmentationNetwork):
         print("Feature sizes for each stage: ", self.feat_size)
         print("Hidden size: ", self.hidden_size)
         print("Dims for each stage: ", dims)
-        self.unetr_pp_encoder = UnetrPPEncoder(dims=dims, depths=depths, num_heads=num_heads, input_size=input_size)
+        self.unetr_pp_encoder = UnetrPPEncoder(dims=dims, depths=depths, num_heads=num_heads, img_size=img_size)
 
         self.encoder1 = UnetResBlock(
             spatial_dims=3,

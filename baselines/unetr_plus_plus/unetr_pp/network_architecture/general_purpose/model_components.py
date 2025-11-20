@@ -6,13 +6,16 @@ from monai.utils import optional_import
 from unetr_pp.network_architecture.layers import LayerNorm
 from unetr_pp.network_architecture.general_purpose.transformerblock import TransformerBlock
 from unetr_pp.network_architecture.dynunet_block import get_conv_layer, UnetResBlock
-
+import torch
 
 einops, _ = optional_import("einops")
 
+
 class UnetrPPEncoder(nn.Module):
     def __init__(self, input_size=None, dims=None,
-                 proj_size=None, depths=None, num_heads=4, spatial_dims=3, in_channels=1, dropout=0.0, transformer_dropout_rate=0.15, **kwargs):
+                 proj_size=None, depths=None, num_heads=4, spatial_dims=3, in_channels=1, dropout=0.0,
+                 transformer_dropout_rate=0.15, img_size=None,
+                 **kwargs):
         super().__init__()
 
         if depths is None:
@@ -36,6 +39,17 @@ class UnetrPPEncoder(nn.Module):
             get_norm_layer(name=("group", {"num_groups": in_channels}), channels=dims[0]),
         )
         self.downsample_layers.append(stem_layer)
+
+        # calculate dimension of the input after stem layer
+        x = torch.rand(1, in_channels, img_size[0], img_size[1], img_size[2])
+        x = stem_layer(x)
+        _, _, h, w, d = x.shape
+        input_size[0] = h * w * d
+
+        # then the other inputs SHOULD be calculated based on that
+        for i in range(1, 4):
+            input_size[i] = input_size[i - 1] // 8
+
         for i in range(3):
             downsample_layer = nn.Sequential(
                 get_conv_layer(spatial_dims, dims[i], dims[i + 1], kernel_size=(2, 2, 2), stride=(2, 2, 2),
@@ -48,7 +62,9 @@ class UnetrPPEncoder(nn.Module):
         for i in range(4):
             stage_blocks = []
             for j in range(depths[i]):
-                stage_blocks.append(TransformerBlock(input_size=input_size[i], hidden_size=dims[i],  proj_size=proj_size[i], num_heads=num_heads,
+                stage_blocks.append(
+                    TransformerBlock(input_size=input_size[i], hidden_size=dims[i], proj_size=proj_size[i],
+                                     num_heads=num_heads,
                                      dropout_rate=transformer_dropout_rate, pos_embed=True))
             self.stages.append(nn.Sequential(*stage_blocks))
         self.hidden_states = []
@@ -85,7 +101,7 @@ class UnetrPPEncoder(nn.Module):
 
 
 class UnetrUpBlock(nn.Module):
-    def     __init__(
+    def __init__(
             self,
             spatial_dims: int,
             in_channels: int,
@@ -136,7 +152,8 @@ class UnetrUpBlock(nn.Module):
         else:
             stage_blocks = []
             for j in range(depth):
-                stage_blocks.append(TransformerBlock(input_size=out_size, hidden_size= out_channels, proj_size=proj_size, num_heads=num_heads,
+                stage_blocks.append(TransformerBlock(input_size=out_size, hidden_size=out_channels, proj_size=proj_size,
+                                                     num_heads=num_heads,
                                                      dropout_rate=0.15, pos_embed=True))
             self.decoder_block.append(nn.Sequential(*stage_blocks))
 
