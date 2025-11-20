@@ -178,6 +178,7 @@ class UnetrUpBlock(nn.Module):
     def forward(self, inp, skip):
 
         out = self.transp_conv(inp)
+        print("UpBlock transp conv output shape:", out.shape)
         out = out + skip
         out = self.decoder_block[0](out)
 
