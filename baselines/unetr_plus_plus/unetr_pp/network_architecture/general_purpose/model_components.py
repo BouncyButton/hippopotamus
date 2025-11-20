@@ -46,6 +46,8 @@ class UnetrPPEncoder(nn.Module):
         _, _, h, w, d = x.shape
         input_size[0] = h * w * d
 
+        print("Calculated input size after stem:", input_size[0])
+
         # then the other inputs SHOULD be calculated based on that
         for i in range(1, 4):
             input_size[i] = input_size[i - 1] // 8
