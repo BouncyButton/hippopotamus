@@ -34,7 +34,7 @@ class UnetrPPEncoder(nn.Module):
 
         self.downsample_layers = nn.ModuleList()  # stem and 3 intermediate downsampling conv layers
         stem_layer = nn.Sequential(
-            get_conv_layer(spatial_dims, in_channels, dims[0], kernel_size=(2, 4, 4), stride=(2, 4, 4),
+            get_conv_layer(spatial_dims, in_channels, dims[0], kernel_size=(2, 2, 2), stride=(2, 2, 2),
                            dropout=dropout, conv_only=True, ),
             get_norm_layer(name=("group", {"num_groups": in_channels}), channels=dims[0]),
         )
