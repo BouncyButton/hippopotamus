@@ -27,11 +27,6 @@ class UnetrPPEncoder(nn.Module):
         if input_size is None:
             input_size = [32 * 32 * 32, 16 * 16 * 16, 8 * 8 * 8, 4 * 4 * 4]
 
-        print("Encoder input sizes:", input_size)
-        print("Encoder dims:", dims)
-        print("Encoder proj sizes:", proj_size)
-        print("Encoder depths:", depths)
-
         self.downsample_layers = nn.ModuleList()  # stem and 3 intermediate downsampling conv layers
         stem_layer = nn.Sequential(
             get_conv_layer(spatial_dims, in_channels, dims[0], kernel_size=(2, 2, 2), stride=(2, 2, 2),
@@ -41,21 +36,10 @@ class UnetrPPEncoder(nn.Module):
         self.downsample_layers.append(stem_layer)
 
         # calculate dimension of the input after stem layer
-        print("calculating input size using img_size:", img_size)
         x = torch.rand(1, in_channels, img_size[0], img_size[1], img_size[2])
         x = self.downsample_layers[0](x)
         _, _, h, w, d = x.shape
-        # round to the closest multiple of 2 (down)
-        # h, w, d = h >> 1 << 1, w >> 1 << 1, d >> 1 << 1
         input_size[0] = h * w * d
-
-        print("i got h,w,d:", h, w, d)
-        print("Calculated input size after downsample:", input_size[0])
-
-        # then the other inputs SHOULD be calculated based on that
-        # for i in range(1, 4):
-        #     input_size[i] = input_size[i - 1] // 8
-        # DOESNT WORK; falling back to previous method of calculation
 
         for i in range(3):
             downsample_layer = nn.Sequential(
@@ -66,10 +50,8 @@ class UnetrPPEncoder(nn.Module):
             self.downsample_layers.append(downsample_layer)
             x = downsample_layer(x)
             _, _, h, w, d = x.shape
-            # if i < 2:
-            #     h, w, d = h >> 1 << 1, w >> 1 << 1, d >> 1 << 1
+
             input_size[i + 1] = h * w * d
-            print(f"Calculated input size after downsample {i + 1}:", input_size[i + 1])
 
         self.stages = nn.ModuleList()  # 4 feature resolution stages, each consisting of multiple Transformer blocks
         for i in range(4):
@@ -95,7 +77,7 @@ class UnetrPPEncoder(nn.Module):
 
     def forward_features(self, x):
         hidden_states = []
-        print("forward_features input x shape:", x.shape)
+
         x = self.downsample_layers[0](x)
         x = self.stages[0](x)
 
@@ -192,7 +174,7 @@ class UnetrUpBlock(nn.Module):
     def forward(self, inp, skip):
 
         out = self.transp_conv(inp)
-        print("UpBlock transp conv output shape:", out.shape)
+
         out = out + skip
         out = self.decoder_block[0](out)
 

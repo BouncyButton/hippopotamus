@@ -51,11 +51,9 @@ class TransformerBlock(nn.Module):
 
     def forward(self, x):
         B, C, H, W, D = x.shape
-        print("B,C,H,W,D:", B, C, H, W, D)
 
         x = x.reshape(B, C, H * W * D).permute(0, 2, 1)
-        print("X:", x.shape)
-        print("pos embed:", self.pos_embed.shape)
+
         if self.pos_embed is not None:
             x = x + self.pos_embed
         attn = x + self.gamma * self.epa_block(self.norm(x))

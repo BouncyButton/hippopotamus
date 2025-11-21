@@ -25,8 +25,7 @@ def crop_to_input(x, original_shape):
     # x: (B,C,H,W,D) after UNet
     # original_shape: (H_in, W_in, D_in)
     H_in, W_in, D_in = original_shape
-    print("hwd to crop", H_in, W_in, D_in)
-    print("x to crop:", x.shape)
+
     return x[:, :, :H_in, :W_in, :D_in]
 
 
@@ -98,14 +97,6 @@ class UNETR_PP(SegmentationNetwork):
         )
         self.hidden_size = hidden_size
 
-        print("Image size: ", img_size)
-        first = (img_size[0] // self.patch_size[0]) * (img_size[1] // self.patch_size[1]) * (
-                    img_size[2] // self.patch_size[2])
-        input_size = [first, first // 8, first // 64, first // 512]
-        print("Input sizes for each stage: ", input_size)
-        print("Feature sizes for each stage: ", self.feat_size)
-        print("Hidden size: ", self.hidden_size)
-        print("Dims for each stage: ", dims)
         self.unetr_pp_encoder = UnetrPPEncoder(dims=dims, depths=depths, num_heads=num_heads, img_size=img_size)
 
         self.encoder1 = UnetResBlock(
@@ -159,7 +150,6 @@ class UNETR_PP(SegmentationNetwork):
             self.out3 = UnetOutBlock(spatial_dims=3, in_channels=feature_size * 4, out_channels=out_channels)
 
     def proj_feat(self, x, hidden_size, feat_size):
-        print(f"proj_feat {x.shape} with hidden size:", hidden_size, "and feat size:", feat_size)
         x = x.view(x.size(0), feat_size[0], feat_size[1], feat_size[2], hidden_size)
         x = x.permute(0, 4, 1, 2, 3).contiguous()
         return x
@@ -184,21 +174,17 @@ class UNETR_PP(SegmentationNetwork):
         # i know it's not the best thing but i'll fix the dims as follows
         enc3 = enc3[:, :, :dec4.shape[2] * 2, :dec4.shape[3] * 2, :dec4.shape[4] * 2]
 
-        print("enc3 and dec4: ", enc3.shape, dec4.shape)
-
         dec3 = self.decoder5(dec4, enc3)
         enc2 = enc2[:, :, :dec3.shape[2] * 2, :dec3.shape[3] * 2, :dec3.shape[4] * 2]
-        print("enc2 and dec3: ", enc2.shape, dec3.shape)
 
         dec2 = self.decoder4(dec3, enc2)
         enc1 = enc1[:, :, :dec2.shape[2] * 2, :dec2.shape[3] * 2, :dec2.shape[4] * 2]
-        print("enc1 and dec2: ", enc1.shape, dec2.shape)
+
         dec1 = self.decoder3(dec2, enc1)
 
         out = self.decoder2(dec1, convBlock)
         if self.do_ds:
             logits = [self.out1(out), self.out2(dec1), self.out3(dec2)]
-            print([logit.shape for logit in logits])
             # crop back to the original size
             logits[0] = crop_to_input(logits[0], original_shape)
             logits[1] = crop_to_input(logits[1], (original_shape[0] // 2, original_shape[1] // 2, original_shape[2] // 2))

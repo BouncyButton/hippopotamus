@@ -282,7 +282,6 @@ class unetr_pp_trainer_general_purpose(TrainerGeneralPurpose):
                 self.amp_grad_scaler.step(self.optimizer)
                 self.amp_grad_scaler.update()
         else:
-            print("shape of data:", data.shape)
             output = self.network(data)
             del data
             l = self.loss(output, target)
