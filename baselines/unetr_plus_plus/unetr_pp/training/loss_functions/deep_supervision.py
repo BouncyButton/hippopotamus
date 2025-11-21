@@ -39,5 +39,21 @@ class MultipleOutputLoss2(nn.Module):
         l = weights[0] * self.loss(x[0], y[0])
         for i in range(1, len(x)):
             if weights[i] != 0:
+                if y[i].shape[2:] != x[i].shape[2:]:
+                    # center pad the supervision to the size of the output
+                    import torch.nn.functional as F
+                    y[i] = F.pad(
+                        y[i],
+                        [
+                            (x[i].shape[4] - y[i].shape[4]) // 2,
+                            (x[i].shape[4] - y[i].shape[4] + 1) // 2,
+                            (x[i].shape[3] - y[i].shape[3]) // 2,
+                            (x[i].shape[3] - y[i].shape[3] + 1) // 2,
+                            (x[i].shape[2] - y[i].shape[2]) // 2,
+                            (x[i].shape[2] - y[i].shape[2] + 1) // 2,
+                        ],
+                        mode="constant",
+                        value=0,
+                    )
                 l += weights[i] * self.loss(x[i], y[i])
         return l
