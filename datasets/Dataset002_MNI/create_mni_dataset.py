@@ -120,7 +120,7 @@ def merge_image_data_to_label_data(df, dir, name='s*_t1w_standard_defaced_MNI.ni
     return df
 
 def simple_progress(current, total, width=80):
-    print(f"\rDownloaded {current}/{total} bytes", end="")
+    print(f"\rDownloaded {current}/{total} bytes ({current/total:.2%})", end="")
 
 if not os.path.exists('mni-hisub25/'):
     wget.download('https://mni-hisub25.projects.nitrc.org/downloads/mni-hisub25.tar', bar=simple_progress)

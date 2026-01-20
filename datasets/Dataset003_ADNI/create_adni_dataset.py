@@ -184,6 +184,32 @@ if __name__ == '__main__':
     merge_image_data_to_label_data(df, dir='Released_ACPC_brainScans_MNC/')
     df.to_pickle('adni_hippocampus_full.pkl', compression="gzip")
 
+    identity_affine = np.eye(4)
+
+    for index, row in df.iterrows():
+        image_id = row['image_id']
+        direction = row['direction']  # Get the direction (L or R)
+        image_data = row['image_data']
+        label_data = row['data']
+
+        # Create NIfTI image for image_data with direction in filename
+        image_nifti = nib.Nifti1Image(image_data, identity_affine)
+        image_filename_tr = os.path.join('imagesTr', f'hippocampus_adni_{image_id}_{direction}_0000.nii.gz')
+        image_filename_dataset = os.path.join(os.environ['nnUNet_raw'], 'Dataset003_ADNI', 'imagesTr',
+                                              f'hippocampus_adni_{image_id}_{direction}_0000.nii.gz')
+        nib.save(image_nifti, image_filename_tr)
+        nib.save(image_nifti, image_filename_dataset)
+
+        # Create NIfTI image for label_data with direction in filename
+        label_nifti = nib.Nifti1Image(label_data, identity_affine)
+        label_filename_tr = os.path.join('labelsTr', f'hippocampus_adni_{image_id}_{direction}.nii.gz')
+        label_filename_dataset = os.path.join(os.environ['nnUNet_raw'], 'Dataset003_ADNI', 'labelsTr',
+                                              f'hippocampus_adni_{image_id}_{direction}.nii.gz')
+        nib.save(label_nifti, label_filename_tr)
+        nib.save(label_nifti, label_filename_dataset)
+
+    print(f"Successfully saved {len(df)} image and label files.")
+
     # ok ignore this
 
     # refer to https://www.hippocampal-protocol.net/SOPs/screenshots/harp_final_release/search.png to find image data
