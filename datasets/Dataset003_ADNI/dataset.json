@@ -1,0 +1,11 @@
+{
+  "channel_names": {
+    "0": "MRI"
+  },
+  "labels": {
+    "background": 0,
+    "hippocampus": 1
+  },
+  "numTraining": 270,
+  "file_ending": ".nii.gz"
+}

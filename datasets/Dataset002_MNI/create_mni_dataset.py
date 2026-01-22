@@ -6,7 +6,7 @@ import nibabel as nib
 
 def get_data(dir, filename_structure='s*/',
              name='s*_hippolabels_hres_R_MNI.nii.gz',
-             half=32):
+             half=None):
     import nibabel as nib
     import numpy as np
     import os
@@ -57,8 +57,15 @@ def get_data(dir, filename_structure='s*/',
     print(f"Processing {name}")
     print(f"Cropping indices: x({min_x},{max_x}), y({min_y},{max_y}), z({min_z},{max_z})")
 
-    if max_x - min_x > 2 * half or max_y - min_y > 2 * half or max_z - min_z > 2 * half:
-        raise ValueError('Uhmmmm we may have a problem')
+    half_x = 40 // 2
+    half_y = 56 // 2
+    half_z = 48 // 2
+
+    if half is not None:
+        half_x = half_y = half_z = half
+
+        if max_x - min_x > 2 * half or max_y - min_y > 2 * half or max_z - min_z > 2 * half:
+            raise ValueError('Uhmmmm we may have a problem')
 
     # calculate mid points
     avg_x = (min_x + max_x) // 2
@@ -72,13 +79,13 @@ def get_data(dir, filename_structure='s*/',
     for f in files:
         img = nib.load(f)
         data = img.get_fdata()
-        crop_idx = ((avg_x - half, avg_x + half),
-                    (avg_y - half, avg_y + half),
-                    (avg_z - half, avg_z + half))
+        crop_idx = ((avg_x - half_x, avg_x + half_x),
+                    (avg_y - half_y, avg_y + half_y),
+                    (avg_z - half_z, avg_z + half_z))
 
-        cropped = data[avg_x - half:avg_x + half,
-                  avg_y - half:avg_y + half,
-                  avg_z - half:avg_z + half]
+        cropped = data[avg_x - half_x:avg_x + half_x,
+                  avg_y - half_y:avg_y + half_y,
+                  avg_z - half_z:avg_z + half_z]
         data_list.append(cropped)
         crop_idxs.append(crop_idx)
 
@@ -119,8 +126,10 @@ def merge_image_data_to_label_data(df, dir, name='s*_t1w_standard_defaced_MNI.ni
     df['image_data'] = image_data_list
     return df
 
+
 def simple_progress(current, total, width=80):
-    print(f"\rDownloaded {current}/{total} bytes ({current/total:.2%})", end="")
+    print(f"\rDownloaded {current}/{total} bytes ({current / total:.2%})", end="")
+
 
 if not os.path.exists('mni-hisub25/'):
     wget.download('https://mni-hisub25.projects.nitrc.org/downloads/mni-hisub25.tar', bar=simple_progress)
@@ -134,9 +143,9 @@ if not os.path.exists('mni-hisub25/'):
 import pandas as pd
 
 df_L = get_data('mri_dataset', filename_structure='s*/', name='s*_hippolabels_t1w_standard_L_MNI.nii.gz',
-                half=32)
+                half=None)
 df_R = get_data('mri_dataset', filename_structure='s*/', name='s*_hippolabels_t1w_standard_R_MNI.nii.gz',
-                half=32)
+                half=None)
 
 df = pd.concat([df_L, df_R], ignore_index=True)
 

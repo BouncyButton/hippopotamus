@@ -1,0 +1,13 @@
+{
+  "channel_names": {
+    "0": "MRI"
+  },
+  "labels": {
+    "background": 0,
+    "CA1-3": 1,
+    "Subiculum": 2,
+    "CA4-DG": 3
+  },
+  "numTraining": 50,
+  "file_ending": ".nii.gz"
+}
