@@ -159,7 +159,7 @@ df.to_pickle('mni_hippocampus_full.pkl', compression="gzip")
 identity_affine = np.eye(4)
 
 for index, row in df.iterrows():
-    image_id = row['image_id']
+    image_id = row['subject_id']
     direction = row['direction']  # Get the direction (L or R)
     image_data = row['image_data']
     label_data = row['data']
