@@ -160,7 +160,7 @@ df_R = get_data('mri_dataset', filename_structure='s*/', name='s*_hippolabels_t1
 df = pd.concat([df_L, df_R], ignore_index=True)
 
 merge_image_data_to_label_data(df, dir='mri_dataset/s*/')
-df.to_pickle('mni_hippocampus_full.pkl', compression="gzip")
+df.to_pickle(os.path.join(TARGET_FOLDER, 'mni_hippocampus_full.pkl'), compression="gzip")
 
 identity_affine = np.eye(4)
 
