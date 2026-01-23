@@ -2,8 +2,18 @@ import tarfile
 import nibabel as nib
 import numpy as np
 import os
+import sys
 
+import pandas as pd
 import wget
+import wandb
+
+TARGET_FOLDER = sys.argv[1] if len(sys.argv) > 1 else 'Dataset105_COBRA'
+
+# makedir
+os.makedirs(TARGET_FOLDER, exist_ok=True)
+os.makedirs(os.path.join(TARGET_FOLDER, 'imagesTr'), exist_ok=True)
+os.makedirs(os.path.join(TARGET_FOLDER, 'labelsTr'), exist_ok=True)
 
 url = 'https://cobralab.net/files/brains_t2.tar.bz2'
 
@@ -65,7 +75,9 @@ def crop_and_save(data, affine, center_coords, output_path):
     new_img = nib.Nifti1Image(padded_crop.astype(data.dtype), new_affine)
     nib.save(new_img, output_path)
 
+    return padded_crop
 
+data_records = []
 # Process brains 1 to 5
 for i in range(1, 6):
     label_fname = f"brain{i}_labels.mnc"
@@ -107,8 +119,32 @@ for i in range(1, 6):
         lbl_out = os.path.join(OUTPUT_LABELS_DIR, f"hippocampus_cobra_{i}_{side_code}.nii.gz")
 
         # Crop and save Image
-        crop_and_save(img_data, affine, center, img_out)
+        cropped_image_data = crop_and_save(img_data, affine, center, img_out)
         # Crop and save Labels
-        crop_and_save(lbl_data, affine, center, lbl_out)
+        cropped_label_data = crop_and_save(lbl_data, affine, center, lbl_out)
+
+        # 2. Append metadata and paths to your list
+        data_records.append({
+            "subject_id": i,
+            "side": side_code,
+            "center_coords": center.tolist(),
+            "image_data": cropped_image_data,
+            "label_data": cropped_label_data
+        })
 
 print("\nDone! Files saved to imagesTr and labelsTr.")
+
+# 3. Create DataFrame and save to PKL
+df = pd.DataFrame(data_records)
+pkl_filename = "cobra_hippocampus_full.pkl"
+df.to_pickle(os.path.join(TARGET_FOLDER, pkl_filename), compression='gzip')
+print(f"DataFrame saved to {pkl_filename}")
+
+# save all into a private wandb to avoid re-downloading
+wandb.init(project="hippopotamus-project", entity='hippopotamus')
+
+artifact = wandb.Artifact("Dataset105_COBRA", type="dataset")
+artifact.add_dir(TARGET_FOLDER)
+
+wandb.log_artifact(artifact)
+wandb.finish()
