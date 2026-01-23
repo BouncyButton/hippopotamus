@@ -8,6 +8,16 @@ import wget
 import zipfile
 import os
 from tqdm import tqdm
+import sys
+import wandb
+
+TARGET_FOLDER = sys.argv[1] if len(sys.argv) > 1 else 'Dataset103_ADNI'
+
+# makedir
+if not os.path.exists(TARGET_FOLDER):
+    os.makedirs(TARGET_FOLDER)
+    os.makedirs(os.path.join(TARGET_FOLDER, 'imagesTr'))
+    os.makedirs(os.path.join(TARGET_FOLDER, 'labelsTr'))
 
 
 def get_all_labels(dir, name='', half=44):
@@ -194,21 +204,26 @@ if __name__ == '__main__':
 
         # Create NIfTI image for image_data with direction in filename
         image_nifti = nib.Nifti1Image(image_data, identity_affine)
-        image_filename_tr = os.path.join('imagesTr', f'hippocampus_adni_{image_id}_{direction}_0000.nii.gz')
-        image_filename_dataset = os.path.join(os.environ['nnUNet_raw'], 'Dataset003_ADNI', 'imagesTr',
+        image_filename_dataset = os.path.join(TARGET_FOLDER, 'imagesTr',
                                               f'hippocampus_adni_{image_id}_{direction}_0000.nii.gz')
-        nib.save(image_nifti, image_filename_tr)
         nib.save(image_nifti, image_filename_dataset)
 
         # Create NIfTI image for label_data with direction in filename
         label_nifti = nib.Nifti1Image(label_data, identity_affine)
-        label_filename_tr = os.path.join('labelsTr', f'hippocampus_adni_{image_id}_{direction}.nii.gz')
-        label_filename_dataset = os.path.join(os.environ['nnUNet_raw'], 'Dataset003_ADNI', 'labelsTr',
+        label_filename_dataset = os.path.join(TARGET_FOLDER, 'labelsTr',
                                               f'hippocampus_adni_{image_id}_{direction}.nii.gz')
-        nib.save(label_nifti, label_filename_tr)
         nib.save(label_nifti, label_filename_dataset)
 
     print(f"Successfully saved {len(df)} image and label files.")
+
+    # save all into a private wandb to avoid re-downloading
+    wandb.init(project="hippopotamus-project", entity='hippopotamus')
+
+    artifact = wandb.Artifact("Dataset103_ADNI", type="dataset")
+    artifact.add_dir(TARGET_FOLDER)
+
+    wandb.log_artifact(artifact)
+    wandb.finish()
 
     # ok ignore this
 
