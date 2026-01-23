@@ -15,7 +15,7 @@ import argparse
 # 1. Parse Arguments
 parser = argparse.ArgumentParser()
 parser.add_argument('--target', type=str, default='Dataset103_ADNI', help='Target folder name')
-parser.add_argument('--rebuild', action='store_true', help='Force download from ADNI and rebuild pkl')
+parser.add_argument('--rebuild', action='store_true', help='Force download from ADNI and rebuild pkl', default=False)
 args = parser.parse_args()
 
 TARGET_FOLDER = args.target
@@ -41,8 +41,8 @@ def download_from_wandb():
 
 
 # 2. Orchestration Logic
-# We run the rebuild if --rebuild is passed OR if the TARGET_FOLDER is missing/empty
-should_rebuild = args.rebuild or not os.path.exists(TARGET_FOLDER) or not os.listdir(TARGET_FOLDER)
+# We run the rebuild if --rebuild is passed
+should_rebuild = args.rebuild
 
 if not should_rebuild:
     # If folder exists but we aren't rebuilding, try to sync from W&B if data is missing
@@ -144,7 +144,6 @@ def get_all_labels(dir, name=''):
         crop_idxs.append(crop_idx)
 
     # now subsample all images and labels 2x
-
 
     # a filename has this structure:
     # ADNI_nnn_S_nnnn_xxxxx_D.nii
