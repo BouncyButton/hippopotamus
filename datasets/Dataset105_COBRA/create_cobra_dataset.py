@@ -35,6 +35,19 @@ TARGET_SIZE = np.array([96, 128, 160])
 LEFT_LABELS = [101, 102, 104, 105, 106]
 RIGHT_LABELS = [1, 2, 4, 5, 6]
 
+label_mapping = {
+    101: 1,  # right ca1
+    102: 2,  # right subiculum
+    104: 3,  # right ca4
+    105: 4,  # right ca2-3
+    106: 5,  # right stratum
+    1: 1,    # left ca1
+    2: 2,    # left subiculum
+    4: 3,    # left ca4
+    5: 4,    # left ca2-3
+    6: 5     # left stratum
+}
+
 os.makedirs(OUTPUT_IMAGES_DIR, exist_ok=True)
 os.makedirs(OUTPUT_LABELS_DIR, exist_ok=True)
 
@@ -99,6 +112,13 @@ for i in range(1, 6):
     lbl_data = lbl_img.get_fdata()
     img_data = img_img.get_fdata()
     affine = img_img.affine
+
+    # remap labels
+    remapped_lbl_data = np.zeros_like(lbl_data)
+    for original_label, new_label in label_mapping.items():
+        remapped_lbl_data[lbl_data == original_label] = new_label
+
+    lbl_data = remapped_lbl_data
 
     for side_code, labels in [("L", LEFT_LABELS), ("R", RIGHT_LABELS)]:
         # Find the center of the specific hippocampus
