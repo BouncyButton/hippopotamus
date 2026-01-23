@@ -34,7 +34,7 @@ for folder in ['imagesTr', 'imagesTs']:
     for filename in os.listdir(folder):
         if filename.endswith('.nii.gz'):
             new_filename = filename.replace('.nii.gz', '_0000.nii.gz')
-            os.rename(os.path.join(folder, filename), os.path.join(folder, new_filename))
+            os.rename(os.path.join(TARGET_FOLDER, folder, filename), os.path.join(TARGET_FOLDER, folder, new_filename))
 
 # 1. Prepare to collect data
 records = []
