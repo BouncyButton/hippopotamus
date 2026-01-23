@@ -184,8 +184,8 @@ for i in range(1, 6):
         # Prepare filenames
         # Image: hippocampus_cobra_ID_SIDE_0000.nii.gz
         # Label: hippocampus_cobra_ID_SIDE.nii.gz
-        img_out = os.path.join(OUTPUT_IMAGES_DIR, f"hippocampus_cobra_{i}_{side_code}_0000.nii.gz")
-        lbl_out = os.path.join(OUTPUT_LABELS_DIR, f"hippocampus_cobra_{i}_{side_code}.nii.gz")
+        img_out = os.path.join(TARGET_FOLDER, OUTPUT_IMAGES_DIR, f"hippocampus_cobra_{i}_{side_code}_0000.nii.gz")
+        lbl_out = os.path.join(TARGET_FOLDER, OUTPUT_LABELS_DIR, f"hippocampus_cobra_{i}_{side_code}.nii.gz")
 
         # Crop and save Image
         cropped_image_data = crop_and_save(img_data, affine, center, img_out)
