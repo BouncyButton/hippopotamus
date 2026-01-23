@@ -1,8 +1,14 @@
+import numpy as np
 import wget
 import tarfile
 import os
 import nibabel as nib
+import wandb
+import pandas as pd
 
+import sys
+
+TARGET_FOLDER = sys.argv[1] if len(sys.argv) > 1 else 'MNI'
 
 def get_data(dir, filename_structure='s*/',
              name='s*_hippolabels_hres_R_MNI.nii.gz',
@@ -140,8 +146,6 @@ if not os.path.exists('mni-hisub25/'):
     with tarfile.open('mni-hisub25/mri_dataset.tar.gz', 'r:gz') as tar_ref:
         tar_ref.extractall('./')
 
-import pandas as pd
-
 df_L = get_data('mri_dataset', filename_structure='s*/', name='s*_hippolabels_t1w_standard_L_MNI.nii.gz',
                 half=None)
 df_R = get_data('mri_dataset', filename_structure='s*/', name='s*_hippolabels_t1w_standard_R_MNI.nii.gz',
@@ -151,3 +155,32 @@ df = pd.concat([df_L, df_R], ignore_index=True)
 
 merge_image_data_to_label_data(df, dir='mri_dataset/s*/')
 df.to_pickle('mni_hippocampus_full.pkl', compression="gzip")
+
+identity_affine = np.eye(4)
+
+for index, row in df.iterrows():
+    image_id = row['image_id']
+    direction = row['direction']  # Get the direction (L or R)
+    image_data = row['image_data']
+    label_data = row['data']
+
+    # Create NIfTI image for image_data with direction in filename
+    image_nifti = nib.Nifti1Image(image_data, identity_affine)
+    image_filename_dataset = os.path.join(TARGET_FOLDER, 'imagesTr', f'hippocampus_mni_{image_id}_{direction}_0000.nii.gz')
+    nib.save(image_nifti, image_filename_dataset)
+
+    # Create NIfTI image for label_data with direction in filename
+    label_nifti = nib.Nifti1Image(label_data, identity_affine)
+    label_filename_dataset = os.path.join(TARGET_FOLDER, 'labelsTr', f'hippocampus_mni_{image_id}_{direction}.nii.gz')
+    nib.save(label_nifti, label_filename_dataset)
+
+print(f"Successfully saved {len(df)} image and label files.")
+
+# save all into a private wandb to avoid re-downloading
+wandb.init(project="hippopotamus")
+
+artifact = wandb.Artifact("Dataset102_MNI", type="dataset")
+artifact.add_dir(TARGET_FOLDER)
+
+wandb.log_artifact(artifact)
+wandb.finish()
