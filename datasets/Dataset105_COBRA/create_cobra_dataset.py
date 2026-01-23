@@ -113,14 +113,10 @@ for i in range(1, 6):
     img_data = img_img.get_fdata()
     affine = img_img.affine
 
-    # remap labels
-    remapped_lbl_data = np.zeros_like(lbl_data)
-    for original_label, new_label in label_mapping.items():
-        remapped_lbl_data[lbl_data == original_label] = new_label
-
-    lbl_data = remapped_lbl_data
+    original_lbl_data = lbl_data.copy()
 
     for side_code, labels in [("L", LEFT_LABELS), ("R", RIGHT_LABELS)]:
+        lbl_data = original_lbl_data.copy()
         # Find the center of the specific hippocampus
         mask = np.isin(lbl_data, labels)
         coords = np.argwhere(mask)
@@ -131,6 +127,13 @@ for i in range(1, 6):
 
         # Calculate geometric center of the labels
         center = (coords.min(axis=0) + coords.max(axis=0)) / 2
+
+        # remap labels
+        remapped_lbl_data = np.zeros_like(lbl_data)
+        for original_label, new_label in label_mapping.items():
+            remapped_lbl_data[lbl_data == original_label] = new_label
+
+        lbl_data = remapped_lbl_data
 
         # Prepare filenames
         # Image: hippocampus_cobra_ID_SIDE_0000.nii.gz
