@@ -117,7 +117,7 @@ for i in range(1, 6):
     original_lbl_data = lbl_data.copy()
 
     for side_code, labels in [("L", LEFT_LABELS), ("R", RIGHT_LABELS)]:
-        lbl_data = original_lbl_data.copy()
+        lbl_data = original_lbl_data
         # Find the center of the specific hippocampus
         mask = np.isin(lbl_data, labels)
         coords = np.argwhere(mask)
