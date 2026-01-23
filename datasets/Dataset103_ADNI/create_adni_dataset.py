@@ -14,13 +14,12 @@ import wandb
 TARGET_FOLDER = sys.argv[1] if len(sys.argv) > 1 else 'Dataset103_ADNI'
 
 # makedir
-if not os.path.exists(TARGET_FOLDER):
-    os.makedirs(TARGET_FOLDER)
-    os.makedirs(os.path.join(TARGET_FOLDER, 'imagesTr'))
-    os.makedirs(os.path.join(TARGET_FOLDER, 'labelsTr'))
+os.makedirs(TARGET_FOLDER, exist_ok=True)
+os.makedirs(os.path.join(TARGET_FOLDER, 'imagesTr'), exist_ok=True)
+os.makedirs(os.path.join(TARGET_FOLDER, 'labelsTr'), exist_ok=True)
 
 
-def get_all_labels(dir, name='', half=44):
+def get_all_labels(dir, name=''):
     files = glob.glob(os.path.join(dir, name))
 
     aggreg = None
@@ -65,15 +64,16 @@ def get_all_labels(dir, name='', half=44):
 
     print(f"Cropping indices: x({min_x},{max_x}), y({min_y},{max_y}), z({min_z},{max_z})")
 
-    if max_x - min_x > 2 * half or max_y - min_y > 2 * half or max_z - min_z > 2 * half:
-        raise ValueError('Uhmmmm we may have a problem')
-
     # calculate mid points
     avg_x = (min_x + max_x) // 2
     avg_y = (min_y + max_y) // 2
     avg_z = (min_z + max_z) // 2
 
     aggreg = aggreg[min_x:max_x + 1, min_y:max_y + 1, min_z:max_z + 1].copy()
+
+    half_x = 44
+    half_y = 32
+    half_z = 32
 
     # save to disk a numpy file of all crops
     import pandas as pd
@@ -86,15 +86,22 @@ def get_all_labels(dir, name='', half=44):
         img = nib.load(f)
         data = img.get_fdata()
         # cropped = data[min_x:max_x + 1, min_y:max_y + 1, min_z:max_z + 1]
-        crop_idx = ((avg_x - half, avg_x + half),
-                    (avg_y - half, avg_y + half),
-                    (avg_z - half, avg_z + half))
+        crop_idx = ((avg_x - half_x, avg_x + half_x),
+                    (avg_y - half_y, avg_y + half_y),
+                    (avg_z - half_z, avg_z + half_z))
 
-        cropped = data[avg_x - half:avg_x + half,
-                  avg_y - half:avg_y + half,
-                  avg_z - half:avg_z + half].copy()
+        cropped = data[avg_x - half_x:avg_x + half_x,
+                  avg_y - half_y:avg_y + half_y,
+                  avg_z - half_z:avg_z + half_z].copy()
+
+        # subsample 2x
+        cropped = cropped[::2, ::2, ::2]
+
         data_list.append(cropped)
         crop_idxs.append(crop_idx)
+
+    # now subsample all images and labels 2x
+
 
     # a filename has this structure:
     # ADNI_nnn_S_nnnn_xxxxx_D.nii
@@ -150,6 +157,8 @@ def merge_image_data_to_label_data(df, dir):
                                  crop_idx[1][0]:crop_idx[1][1],
                                  crop_idx[2][0]:crop_idx[2][1]
                                  ]
+            # subsample 2x
+            cropped_image_data = cropped_image_data[::2, ::2, ::2]
             image_data_list.append(cropped_image_data)
 
     df['image_data'] = image_data_list
