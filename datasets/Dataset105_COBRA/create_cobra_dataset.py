@@ -17,7 +17,8 @@ os.makedirs(os.path.join(TARGET_FOLDER, 'labelsTr'), exist_ok=True)
 
 url = 'https://cobralab.net/files/brains_t2.tar.bz2'
 
-wget.download(url)
+if not os.path.exists('brains_t2.tar.bz2'):
+    wget.download(url)
 
 file = tarfile.open('brains_t2.tar.bz2')
 file.extractall('./')
