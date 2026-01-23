@@ -7,8 +7,51 @@ import sys
 import pandas as pd
 import wget
 import wandb
+import argparse
 
-TARGET_FOLDER = sys.argv[1] if len(sys.argv) > 1 else 'Dataset105_COBRA'
+# 1. Parse Arguments
+parser = argparse.ArgumentParser()
+parser.add_argument('--target', type=str, default='Dataset105_COBRA', help='Target folder name')
+parser.add_argument('--rebuild', action='store_true', help='Force download from COBRA and rebuild pkl')
+args = parser.parse_args()
+
+TARGET_FOLDER = args.target
+WANDB_PROJECT = "hippopotamus-project"
+WANDB_ENTITY = "hippopotamus"
+ARTIFACT_NAME = f"{WANDB_ENTITY}/{WANDB_PROJECT}/Dataset105_COBRA:latest"
+
+
+def download_from_wandb():
+    print(f"Checking for artifact {ARTIFACT_NAME}...")
+    try:
+        run = wandb.init(project=WANDB_PROJECT, entity=WANDB_ENTITY, job_type="dataset-download")
+        artifact = run.use_artifact(ARTIFACT_NAME, type='dataset')
+        artifact_dir = artifact.download(root=TARGET_FOLDER)
+        print(f"Successfully downloaded to {TARGET_FOLDER}")
+        run.finish()
+        return True
+    except Exception as e:
+        print(f"W&B download failed: {e}")
+        if 'run' in locals():
+            run.finish()
+        return False
+
+
+# 2. Orchestration Logic
+# We run the rebuild if --rebuild is passed OR if the TARGET_FOLDER is missing/empty
+should_rebuild = args.rebuild or not os.path.exists(TARGET_FOLDER) or not os.listdir(TARGET_FOLDER)
+
+if not should_rebuild:
+    # If folder exists but we aren't rebuilding, try to sync from W&B if data is missing
+    # (e.g., folder exists but is empty)
+    print("Attempting to use existing data or download from W&B...")
+    if not download_from_wandb():
+        print("Falling back to full rebuild...")
+        should_rebuild = True
+
+if not should_rebuild:
+    print("Data downloaded from wandb successfully.")
+    sys.exit(0)
 
 # makedir
 os.makedirs(TARGET_FOLDER, exist_ok=True)
@@ -43,11 +86,11 @@ label_mapping = {
     104: 3,  # right ca4
     105: 4,  # right ca2-3
     106: 5,  # right stratum
-    1: 1,    # left ca1
-    2: 2,    # left subiculum
-    4: 3,    # left ca4
-    5: 4,    # left ca2-3
-    6: 5     # left stratum
+    1: 1,  # left ca1
+    2: 2,  # left subiculum
+    4: 3,  # left ca4
+    5: 4,  # left ca2-3
+    6: 5  # left stratum
 }
 
 os.makedirs(OUTPUT_IMAGES_DIR, exist_ok=True)
@@ -91,6 +134,7 @@ def crop_and_save(data, affine, center_coords, output_path):
     nib.save(new_img, output_path)
 
     return padded_crop
+
 
 data_records = []
 # Process brains 1 to 5

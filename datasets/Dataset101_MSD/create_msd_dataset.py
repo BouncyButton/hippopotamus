@@ -11,7 +11,7 @@ import argparse
 
 # 1. Parse Arguments
 parser = argparse.ArgumentParser()
-parser.add_argument('--target', type=str, default='Dataset105_COBRA', help='Target folder name')
+parser.add_argument('--target', type=str, default='Dataset101_MSD', help='Target folder name')
 parser.add_argument('--rebuild', action='store_true', help='Force download from MSD and rebuild pkl')
 args = parser.parse_args()
 
