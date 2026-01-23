@@ -10,6 +10,12 @@ import sys
 
 TARGET_FOLDER = sys.argv[1] if len(sys.argv) > 1 else 'MNI'
 
+# makedir
+if not os.path.exists(TARGET_FOLDER):
+    os.makedirs(TARGET_FOLDER)
+    os.makedirs(os.path.join(TARGET_FOLDER, 'imagesTr'))
+    os.makedirs(os.path.join(TARGET_FOLDER, 'labelsTr'))
+
 def get_data(dir, filename_structure='s*/',
              name='s*_hippolabels_hres_R_MNI.nii.gz',
              half=None):
