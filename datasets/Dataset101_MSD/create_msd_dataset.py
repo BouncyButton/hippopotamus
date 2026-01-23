@@ -4,58 +4,65 @@ import tarfile
 import nibabel as nib
 import pandas as pd
 import wget
+import shutil
 import wandb
 
-TARGET_FOLDER = sys.argv[1] if len(sys.argv) > 1 else 'Dataset105_COBRA'
+TARGET_FOLDER = sys.argv[1] if len(sys.argv) > 1 else 'Dataset101_MSD'
 
-# makedir
-os.makedirs(TARGET_FOLDER, exist_ok=True)
+# 1. Setup Folders
 os.makedirs(os.path.join(TARGET_FOLDER, 'imagesTr'), exist_ok=True)
+os.makedirs(os.path.join(TARGET_FOLDER, 'imagesTs'), exist_ok=True)
 os.makedirs(os.path.join(TARGET_FOLDER, 'labelsTr'), exist_ok=True)
 
-wget.download('https://msd-for-monai.s3-us-west-2.amazonaws.com/Task04_Hippocampus.tar')
+# 2. Download and Extract
+url = 'https://msd-for-monai.s3-us-west-2.amazonaws.com/Task04_Hippocampus.tar'
+if not os.path.exists('Task04_Hippocampus.tar'):
+    wget.download(url)
 
-file = tarfile.open('Task04_Hippocampus.tar')
-file.extractall('./')
+with tarfile.open('Task04_Hippocampus.tar') as file:
+    file.extractall('./temp_extract')
 
-# move imagesTr, imagesTs, labelsTr to the upper folder
-import shutil
+# 3. Move files DIRECTLY into TARGET_FOLDER
+# Note: MSD tar usually contains a folder named 'Task04_Hippocampus'
+src_base = './temp_extract/Task04_Hippocampus'
 
-shutil.move('Task04_Hippocampus/imagesTr', './imagesTr')
-shutil.move('Task04_Hippocampus/imagesTs', './imagesTs')
-shutil.move('Task04_Hippocampus/labelsTr', './labelsTr')
+for folder in ['imagesTr', 'imagesTs', 'labelsTr']:
+    src_dir = os.path.join(src_base, folder)
+    dst_dir = os.path.join(TARGET_FOLDER, folder)
 
-shutil.rmtree('Task04_Hippocampus')
+    for f in os.listdir(src_dir):
+        # Move and overwrite if exists
+        shutil.move(os.path.join(src_dir, f), os.path.join(dst_dir, f))
 
-# rename each file in imagesTr and imagesTs to nnUNet format
-import os
+shutil.rmtree('./temp_extract')
 
+# 4. Rename to nnUNet format (_0000)
+# ONLY rename images. Labels MUST NOT have the _0000 suffix.
 for folder in ['imagesTr', 'imagesTs']:
-    for filename in os.listdir(folder):
-        if filename.endswith('.nii.gz'):
-            new_filename = filename.replace('.nii.gz', '_0000.nii.gz')
-            os.rename(os.path.join(TARGET_FOLDER, folder, filename), os.path.join(TARGET_FOLDER, folder, new_filename))
+    folder_path = os.path.join(TARGET_FOLDER, folder)
+    for filename in os.listdir(folder_path):
+        if filename.endswith('.nii.gz') and not filename.endswith('_0000.nii.gz'):
+            new_name = filename.replace('.nii.gz', '_0000.nii.gz')
+            os.rename(os.path.join(folder_path, filename), os.path.join(folder_path, new_name))
 
-# 1. Prepare to collect data
+# 5. Data Collection
 records = []
-# We focus on imagesTr because those have corresponding labelsTr
 train_image_dir = os.path.join(TARGET_FOLDER, 'imagesTr')
 train_label_dir = os.path.join(TARGET_FOLDER, 'labelsTr')
 
 print("Reading files into DataFrame...")
-
-# 2. Iterate through the training images
-for filename in os.listdir(train_image_dir):
+for filename in sorted(os.listdir(train_image_dir)):
     if filename.endswith('_0000.nii.gz'):
-        # Construct paths
-        # Image: hippocampus_001_0000.nii.gz -> Label: hippocampus_001.nii.gz
+        # Correct mapping:
+        # Image: hippocampus_001_0000.nii.gz
+        # Label: hippocampus_001.nii.gz
         subject_id = filename.replace('_0000.nii.gz', '')
         img_path = os.path.join(train_image_dir, filename)
         lbl_path = os.path.join(train_label_dir, f"{subject_id}.nii.gz")
 
         if os.path.exists(lbl_path):
-            # Load the actual data arrays
-            img_data = nib.load(img_path).get_fdata()
+            img_obj = nib.load(img_path)
+            img_data = img_obj.get_fdata()
             lbl_data = nib.load(lbl_path).get_fdata()
 
             records.append({
@@ -65,13 +72,15 @@ for filename in os.listdir(train_image_dir):
                 "dims": img_data.shape
             })
 
-# 3. Create DataFrame and Save
 df_msd = pd.DataFrame(records)
-msd_pkl_path = "msd_hippocampus_full.pkl"
-df_msd.to_pickle(os.path.join(TARGET_FOLDER, msd_pkl_path), compression='gzip')
+if not df_msd.empty:
+    msd_pkl_path = os.path.join(TARGET_FOLDER, "msd_hippocampus_full.pkl")
+    df_msd.to_pickle(msd_pkl_path, compression='gzip')
+    print(f"Done! Saved {len(df_msd)} subjects.")
+else:
+    print("DataFrame is still empty. Check if labels exist in labelsTr.")
 
-print(f"Done! Saved {len(df_msd)} subjects to {msd_pkl_path}")
-
+# 6. W&B Logging
 # save all into a private wandb to avoid re-downloading
 wandb.init(project="hippopotamus-project", entity='hippopotamus')
 
