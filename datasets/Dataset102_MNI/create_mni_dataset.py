@@ -183,7 +183,7 @@ for index, row in df.iterrows():
 print(f"Successfully saved {len(df)} image and label files.")
 
 # save all into a private wandb to avoid re-downloading
-wandb.init(project="hippopotamus")
+wandb.init(project="hippopotamus", entity='mllp_l0-org')
 
 artifact = wandb.Artifact("Dataset102_MNI", type="dataset")
 artifact.add_dir(TARGET_FOLDER)
