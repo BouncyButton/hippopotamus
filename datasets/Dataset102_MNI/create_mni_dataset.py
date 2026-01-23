@@ -8,7 +8,7 @@ import pandas as pd
 
 import sys
 
-TARGET_FOLDER = sys.argv[1] if len(sys.argv) > 1 else 'MNI'
+TARGET_FOLDER = sys.argv[1] if len(sys.argv) > 1 else 'Dataset102_MNI'
 
 # makedir
 if not os.path.exists(TARGET_FOLDER):
