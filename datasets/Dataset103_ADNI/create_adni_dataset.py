@@ -173,8 +173,8 @@ if __name__ == '__main__':
             with zipfile.ZipFile('Released_data_NII_v1.3.zip', 'r') as zip_ref:
                 zip_ref.extractall('./adni_data/')
 
-        df_L = get_all_labels(dir='adni_data/Labels*/', name='*_L.nii', half=42)
-        df_R = get_all_labels(dir='adni_data/Labels*/', name='*_R.nii', half=42)
+        df_L = get_all_labels(dir='adni_data/Labels*/', name='*_L.nii')
+        df_R = get_all_labels(dir='adni_data/Labels*/', name='*_R.nii')
 
         # join
         df = pd.concat([df_L, df_R], ignore_index=True)
