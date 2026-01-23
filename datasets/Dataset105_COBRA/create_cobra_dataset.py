@@ -20,8 +20,9 @@ url = 'https://cobralab.net/files/brains_t2.tar.bz2'
 if not os.path.exists('brains_t2.tar.bz2'):
     wget.download(url)
 
-file = tarfile.open('brains_t2.tar.bz2')
-file.extractall('./')
+if not os.path.exists('brains_t2'):
+    file = tarfile.open('brains_t2.tar.bz2')
+    file.extractall('./')
 
 os.system('git clone https://github.com/CoBrALab/atlases/')
 
