@@ -41,11 +41,11 @@ def main():
 
     # 2. Map cases to their Patient Groups
     # Example: 's01' is the group for both 's01_L' and 's01_R'
-    if args.structure == 'MNI':
+    if args.dataset == 'MNI':
         groups = [get_patient_id_MNI(c) for c in all_cases]
-    elif args.structure == 'ADNI':
+    elif args.dataset == 'ADNI':
         groups = [get_patient_id_ADNI(c) for c in all_cases]
-    elif args.structure == 'COBRA':
+    elif args.dataset == 'COBRA':
         groups = [get_patient_id_COBRA(c) for c in all_cases]
     else:
         raise ValueError('unknown dataset!')
