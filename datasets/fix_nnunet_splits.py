@@ -1,79 +1,83 @@
 import json
 import argparse
-import random
-import os
+import numpy as np
+from sklearn.model_selection import GroupKFold
 import re
 
 
-def get_patient_id(case_name):
-    """
-    Extracts patient ID.
-    Logic: Looks for 's' followed by numbers (e.g., s01, s105).
-    If your naming is different, you can adjust this regex.
-    """
+def get_patient_id_MNI(case_name):
+    # Logic: extract 'sXX' from filename
     match = re.search(r's\d+', case_name)
-    if match:
-        return match.group()
-    # Fallback: split by underscores and take the first part that looks like a subject
-    return case_name.split('_')[2] if len(case_name.split('_')) > 2 else case_name
+    return match.group() if match else case_name
+
+
+def get_patient_id_ADNI(case_name):
+    match = re.search(r'adni_\d+', case_name)
+    return match.group() if match else case_name
+
+
+def get_patient_id_COBRA(case_name):
+    match = re.search(r'cobra_\d+', case_name)
+    return match.group() if match else case_name
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Fix nnU-Net splits to ensure patient-level stratification.")
-    parser.add_argument("-i", "--input", required=True, help="Path to the original splits_final.json")
-    parser.add_argument("-o", "--output", required=True, help="Path to save the corrected splits_final.json")
-    parser.add_argument("-s", "--seed", type=int, default=42, help="Random seed for reproducibility")
-    parser.add_argument("-p", "--ratio", type=float, default=0.8, help="Train/Val split ratio (default 0.8)")
-
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-i", "--input", required=True, help="Original splits_final.json")
+    parser.add_argument("-o", "--output", required=True, help="Corrected splits_final.json")
+    parser.add_argument('-d', '--dataset', type=str, default='MNI', help='dataset codename')
     args = parser.parse_args()
 
-    if not os.path.exists(args.input):
-        print(f"Error: File {args.input} not found.")
-        return
-
     with open(args.input, 'r') as f:
-        splits = json.load(f)
+        original_splits = json.load(f)
 
-    corrected_splits = []
-    random.seed(args.seed)
+    # 1. Collect every unique case across all existing folds
+    all_cases = set()
+    for fold in original_splits:
+        all_cases.update(fold['train'])
+        all_cases.update(fold['val'])
 
-    for i, fold in enumerate(splits):
-        # Combine all cases to get the total population for this fold
-        all_cases = list(set(fold['train'] + fold['val']))
+    all_cases = sorted(list(all_cases))
 
-        # Group cases by Patient ID
-        patient_map = {}
-        for case in all_cases:
-            pid = get_patient_id(case)
-            if pid not in patient_map:
-                patient_map[pid] = []
-            patient_map[pid].append(case)
+    # 2. Map cases to their Patient Groups
+    # Example: 's01' is the group for both 's01_L' and 's01_R'
+    if args.structure == 'MNI':
+        groups = [get_patient_id_MNI(c) for c in all_cases]
+    elif args.structure == 'ADNI':
+        groups = [get_patient_id_ADNI(c) for c in all_cases]
+    elif args.structure == 'COBRA':
+        groups = [get_patient_id_COBRA(c) for c in all_cases]
+    else:
+        raise ValueError('unknown dataset!')
 
-        unique_patients = list(patient_map.keys())
-        random.shuffle(unique_patients)
+    # 3. Use GroupKFold to ensure each patient is in VAL exactly once across 5 folds
+    gkf = GroupKFold(n_splits=5, shuffle=True, random_state=42)
 
-        # Split at patient level
-        split_idx = int(len(unique_patients) * args.ratio)
-        train_p = unique_patients[:split_idx]
-        val_p = unique_patients[split_idx:]
+    new_splits = []
+    # We convert all_cases to a numpy array for easy indexing
+    cases_array = np.array(all_cases)
 
-        # Reconstruct the case lists
-        new_train = [case for p in train_p for case in patient_map[p]]
-        new_val = [case for p in val_p for case in patient_map[p]]
-
-        corrected_splits.append({
-            "train": sorted(new_train),
-            "val": sorted(new_val)
+    for train_idx, val_idx in gkf.split(all_cases, groups=groups):
+        new_splits.append({
+            "train": sorted(cases_array[train_idx].tolist()),
+            "val": sorted(cases_array[val_idx].tolist())
         })
 
-        # Verification check
-        overlap = set(train_p).intersection(set(val_p))
-        print(f"Fold {i}: Train Patients: {len(train_p)} | Val Patients: {len(val_p)} | Leakage: {len(overlap)}")
+    # 4. Final verification
+    for i, fold in enumerate(new_splits):
+        train_p = set(get_patient_id_MNI(c) for c in fold['train'])
+        val_p = set(get_patient_id_MNI(c) for c in fold['val'])
+        overlap = train_p.intersection(val_p)
+
+        print(f"Fold {i}: {len(fold['train'])} files (train), {len(fold['val'])} files (val).")
+        if overlap:
+            print(f"  !! WARNING: Leakage detected for patients: {overlap}")
+        else:
+            print(f"  ✓ No patient leakage.")
 
     with open(args.output, 'w') as f:
-        json.dump(corrected_splits, f, indent=4)
-
-    print(f"\nSuccessfully saved corrected splits to {args.output}")
+        json.dump(new_splits, f, indent=4)
+    print(f"\nSaved 5-fold GroupKFold splits to {args.output}")
 
 
 if __name__ == "__main__":
