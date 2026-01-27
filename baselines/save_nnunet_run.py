@@ -1,7 +1,7 @@
 import wandb
 import argparse
 
-wandb.init(project="hippopotamus", entity="hippopotamus")
+wandb.init(project="hippopotamus-project", entity="hippopotamus")
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model-path', type=str, required=True, help='Path to the nnU-Net model checkpoint folder')
