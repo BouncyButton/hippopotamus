@@ -14,7 +14,7 @@ artifact = wandb.Artifact(
     type="model"
 )
 
-artifact.add_file(args.model_path)
+artifact.add_dir(args.model_path)
 
 wandb.log_artifact(artifact)
 
