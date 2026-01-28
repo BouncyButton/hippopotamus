@@ -10,6 +10,6 @@
     "CA2-3": 4,
     "stratum": 5
   },
-  "numTraining": 270,
+  "numTraining": 10,
   "file_ending": ".nii.gz"
 }
