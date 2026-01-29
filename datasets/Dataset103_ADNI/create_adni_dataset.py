@@ -200,7 +200,7 @@ def merge_image_data_to_label_data(df, dir):
                                  crop_idx[2][0]:crop_idx[2][1]
                                  ]
             # subsample 2x
-            cropped_image_data = cropped_image_data[::2, ::2, ::2]
+            # cropped_image_data = cropped_image_data[::2, ::2, ::2]
             image_data_list.append(cropped_image_data)
 
     df['image_data'] = image_data_list
