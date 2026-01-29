@@ -138,7 +138,7 @@ def get_all_labels(dir, name=''):
                   avg_z - half_z:avg_z + half_z].copy()
 
         # subsample 2x
-        cropped = cropped[::2, ::2, ::2]
+        # cropped = cropped[::2, ::2, ::2]
 
         data_list.append(cropped)
         crop_idxs.append(crop_idx)
