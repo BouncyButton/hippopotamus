@@ -125,6 +125,9 @@ def crop_and_save(data, affine, center_coords, output_path):
                           (pad_before[2], pad_after[2])),
                          mode='constant', constant_values=0)
 
+    # subsample the image 2x
+    padded_crop = padded_crop[::2, ::2, ::2]
+
     # Update affine to reflect the new origin (translation)
     # The new origin is the old origin + the start index in world space
     new_affine = affine.copy()
