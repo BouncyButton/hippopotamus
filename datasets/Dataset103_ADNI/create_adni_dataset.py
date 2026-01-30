@@ -148,8 +148,8 @@ def get_all_labels(dir, name=''):
     # a filename has this structure:
     # ADNI_nnn_S_nnnn_xxxxx_D.nii
     # the subject id is nnn_S_nnnn
-    direction = 'R' if '_R.nii' in name else 'L'
-    metadata = [os.path.basename(f).split('_' + direction + '.nii')[0] for f in files]
+    direction = 'R' if '_R.mnc' in name else 'L'
+    metadata = [os.path.basename(f).split('_' + direction + '.mnc')[0] for f in files]
     metadata = [sid.replace('ADNI_', '') for sid in metadata]
     metadata = [("_".join(sid.split('_')[:-1]), sid.split('_')[-1]) for sid in metadata]
     subject_ids = [sid for sid, _ in metadata]
@@ -210,7 +210,7 @@ def merge_image_data_to_label_data(df, dir):
 if __name__ == '__main__':
     # check if file exists
     if not os.path.exists('adni_hippocampus_labels.pkl'):
-        if not os.path.exists('Released_data_NII_v1.3.zip'):
+        if not os.path.exists('Released_data_MNC_v1.3.zip'):
             wget.download('http://hippocampal-protocol.net/SOPs/LINK_PAGE/FINAL_RELEASE/Released_data_MNC_v1.3.zip')
             with zipfile.ZipFile('Released_data_MNC_v1.3.zip', 'r') as zip_ref:
                 zip_ref.extractall('./adni_data/')
