@@ -81,9 +81,9 @@ def get_all_labels(dir, name=''):
     # crop to leave out the zeros
     # find the min-max indices along each axis
 
-    def find_min_max(axis=0):
+    def find_min_max(single, axis=0):
         min_v = None
-        for i in range(aggreg.shape[0]):
+        for i in range(single.shape[0]):
             idx = [slice(None)] * 3
             idx[axis] = i
 
@@ -92,31 +92,14 @@ def get_all_labels(dir, name=''):
                 break
 
         max_v = None
-        for i in range(aggreg.shape[axis] - 1, -1, -1):
+        for i in range(single.shape[axis] - 1, -1, -1):
             idx = [slice(None)] * 3
             idx[axis] = i
-            if np.any(aggreg[tuple(idx)]):
+            if np.any(single[tuple(idx)]):
                 max_v = i
                 break
 
         return min_v, max_v
-
-    min_x, max_x = find_min_max(axis=0)
-    min_y, max_y = find_min_max(axis=1)
-    min_z, max_z = find_min_max(axis=2)
-
-    print(f"Cropping indices: x({min_x},{max_x}), y({min_y},{max_y}), z({min_z},{max_z})")
-
-    # calculate mid points
-    avg_x = (min_x + max_x) // 2
-    avg_y = (min_y + max_y) // 2
-    avg_z = (min_z + max_z) // 2
-
-    aggreg = aggreg[min_x:max_x + 1, min_y:max_y + 1, min_z:max_z + 1].copy()
-
-    half_x = 44
-    half_y = 32
-    half_z = 32
 
     # save to disk a numpy file of all crops
     import pandas as pd
@@ -125,10 +108,27 @@ def get_all_labels(dir, name=''):
 
     data_list = []
     crop_idxs = []
+
+    half_x = 40 // 2
+    half_y = 56 // 2
+    half_z = 48 // 2
+
     for f in files:
         img = nib.load(f)
         data = img.get_fdata()
         # cropped = data[min_x:max_x + 1, min_y:max_y + 1, min_z:max_z + 1]
+
+        min_x, max_x = find_min_max(data, axis=0)
+        min_y, max_y = find_min_max(data, axis=1)
+        min_z, max_z = find_min_max(data, axis=2)
+
+        print(f"Cropping indices: x({min_x},{max_x}), y({min_y},{max_y}), z({min_z},{max_z})")
+
+        # calculate mid points
+        avg_x = (min_x + max_x) // 2
+        avg_y = (min_y + max_y) // 2
+        avg_z = (min_z + max_z) // 2
+
         crop_idx = ((avg_x - half_x, avg_x + half_x),
                     (avg_y - half_y, avg_y + half_y),
                     (avg_z - half_z, avg_z + half_z))
