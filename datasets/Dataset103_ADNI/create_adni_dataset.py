@@ -87,7 +87,7 @@ def get_all_labels(dir, name=''):
             idx = [slice(None)] * 3
             idx[axis] = i
 
-            if np.any(aggreg[tuple(idx)]):
+            if np.any(single[tuple(idx)]):
                 min_v = i
                 break
 
@@ -109,9 +109,9 @@ def get_all_labels(dir, name=''):
     data_list = []
     crop_idxs = []
 
-    half_x = 40 // 2
-    half_y = 56 // 2
-    half_z = 48 // 2
+    half_x = 32 // 2
+    half_y = 48 // 2
+    half_z = 40 // 2
 
     for f in files:
         img = nib.load(f)
