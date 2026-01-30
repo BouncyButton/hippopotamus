@@ -211,7 +211,7 @@ if __name__ == '__main__':
     # check if file exists
     if not os.path.exists('adni_hippocampus_labels.pkl'):
         if not os.path.exists('Released_data_NII_v1.3.zip'):
-            wget.download('http://hippocampal-protocol.net/SOPs/LINK_PAGE/FINAL_RELEASE/Released_data_NII_v1.3.zip')
+            wget.download('http://hippocampal-protocol.net/SOPs/LINK_PAGE/FINAL_RELEASE/Released_data_MNC_v1.3.zip')
             with zipfile.ZipFile('Released_data_MNC_v1.3.zip', 'r') as zip_ref:
                 zip_ref.extractall('./adni_data/')
 
