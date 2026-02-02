@@ -68,6 +68,8 @@ def get_all_labels(dir, name=''):
     aggreg = None
 
     for f in files:
+        if "CSF" in f:
+            continue
         img = nib.load(f)
         data = img.get_fdata()
         if aggreg is None:
@@ -174,6 +176,8 @@ def merge_image_data_to_label_data(df, dir):
 
     image_data_dict = {}
     for f in tqdm(files):
+        if "CSF" in f:
+            continue
         img = nib.load(f)
         data = img.get_fdata()
         filename = os.path.basename(f)
