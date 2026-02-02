@@ -208,6 +208,7 @@ def merge_image_data_to_label_data(df, dir):
             image_data_list.append(cropped_image_data)
 
     df['image_data'] = image_data_list
+    print(f'Created image_data for {len(image_data_list)} entries')
     return df
 
 
@@ -246,7 +247,7 @@ if __name__ == '__main__':
         with zipfile.ZipFile('Released_ACPC_brainScans_MNC.zip', 'r') as zip_ref:
             zip_ref.extractall('./Released_ACPC_brainScans_MNC/')
 
-    merge_image_data_to_label_data(df, dir='adni_data/')
+    merge_image_data_to_label_data(df, dir='Released_ACPC_brainScans_MNC/')
     df.to_pickle(os.path.join(TARGET_FOLDER, 'adni_hippocampus_full.pkl'), compression="gzip")
 
     identity_affine = np.eye(4)
