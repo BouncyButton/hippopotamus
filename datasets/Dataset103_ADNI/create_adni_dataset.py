@@ -242,7 +242,7 @@ if __name__ == '__main__':
         with zipfile.ZipFile('Released_ACPC_brainScans_MNC.zip', 'r') as zip_ref:
             zip_ref.extractall('./Released_ACPC_brainScans_MNC/')
 
-    merge_image_data_to_label_data(df, dir='minc_scans/')
+    merge_image_data_to_label_data(df, dir='adni_data/')
     df.to_pickle(os.path.join(TARGET_FOLDER, 'adni_hippocampus_full.pkl'), compression="gzip")
 
     identity_affine = np.eye(4)
