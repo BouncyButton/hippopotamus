@@ -67,25 +67,6 @@ class unetr_pp_trainer_general_purpose(TrainerGeneralPurpose):
         self.window_size = [4, 4, 8, 4]
         self.deep_supervision = True
 
-    def _infer_num_classes_from_dataset_json(self):
-        if self.dataset_directory is None:
-            return None
-        dataset_json = join(self.dataset_directory, "dataset.json")
-        if not isfile(dataset_json):
-            return None
-        data = load_json(dataset_json)
-        labels = data.get("labels", {})
-        if not isinstance(labels, dict):
-            return None
-        values = []
-        for v in labels.values():
-            if isinstance(v, (list, tuple)):
-                values.extend(v)
-            else:
-                values.append(v)
-        values = [int(x) for x in values] if values else []
-        return max(values) + 1 if values else None
-
     def initialize(self, training=True, force_load_plans=False):
         """
         - replaced get_default_augmentation with get_moreDA_augmentation
@@ -104,12 +85,6 @@ class unetr_pp_trainer_general_purpose(TrainerGeneralPurpose):
 
             self.plans['plans_per_stage'][self.stage]['pool_op_kernel_sizes'] = [[2, 4, 4], [2, 2, 2], [2, 2, 2]]
             self.process_plans(self.plans)
-            dataset_num_classes = self._infer_num_classes_from_dataset_json()
-            if dataset_num_classes is not None and dataset_num_classes != self.num_classes:
-                print(
-                    f"Overriding num_classes from {self.num_classes} to {dataset_num_classes} based on dataset.json"
-                )
-                self.num_classes = dataset_num_classes
 
             self.setup_DA_params()
             if self.deep_supervision:
