@@ -114,7 +114,7 @@ class UNETR_PP(SegmentationNetwork):
             kernel_size=3,
             upsample_kernel_size=2,
             norm_name=norm_name,
-            out_size=6 * 8 * 6,
+            out_size=img_size[0] // 8 * img_size[1] // 8 * img_size[2] // 8,
         )
         self.decoder4 = UnetrUpBlock(
             spatial_dims=3,
@@ -123,7 +123,7 @@ class UNETR_PP(SegmentationNetwork):
             kernel_size=3,
             upsample_kernel_size=2,
             norm_name=norm_name,
-            out_size=12 * 16 * 12,
+            out_size=img_size[0] // 4 * img_size[1] // 4 * img_size[2] // 4,
         )
         self.decoder3 = UnetrUpBlock(
             spatial_dims=3,
@@ -132,7 +132,7 @@ class UNETR_PP(SegmentationNetwork):
             kernel_size=3,
             upsample_kernel_size=2,
             norm_name=norm_name,
-            out_size=24 * 32 * 24,
+            out_size=img_size[0] // 2 * img_size[1] // 2 * img_size[2] // 2,
         )
         self.decoder2 = UnetrUpBlock(
             spatial_dims=3,
@@ -141,7 +141,7 @@ class UNETR_PP(SegmentationNetwork):
             kernel_size=3,
             upsample_kernel_size=2,
             norm_name=norm_name,
-            out_size=48 * 64 * 48,
+            out_size=img_size[0] * img_size[1] * img_size[2],
             conv_decoder=True,
         )
         self.out1 = UnetOutBlock(spatial_dims=3, in_channels=feature_size, out_channels=out_channels)
@@ -157,7 +157,7 @@ class UNETR_PP(SegmentationNetwork):
     def forward(self, x_in):
         # pad the imgs to 64x64x64
         original_shape = x_in.shape[2:]
-        x_in = pad_to_multiple(x_in, mult=(16, 16, 16))
+        x_in = pad_to_multiple(x_in, mult=(8, 8, 8))
 
         x_output, hidden_states = self.unetr_pp_encoder(x_in)
 
