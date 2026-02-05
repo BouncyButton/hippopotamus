@@ -53,6 +53,8 @@ class UnetrPPEncoder(nn.Module):
 
             input_size[i + 1] = h * w * d
 
+        print("This is the input size for each stage: ", input_size)
+
         self.stages = nn.ModuleList()  # 4 feature resolution stages, each consisting of multiple Transformer blocks
         for i in range(4):
             stage_blocks = []
