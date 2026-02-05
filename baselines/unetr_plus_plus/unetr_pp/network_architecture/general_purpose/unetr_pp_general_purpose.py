@@ -21,6 +21,12 @@ def pad_to_multiple(x, mult=(16, 16, 16)):
     return F.pad(x, pad)
 
 
+def padded_size_from_img_size(img_size, mult=(16, 16, 16)):
+    return tuple(
+        ((img_size[i] + mult[i] - 1) // mult[i]) * mult[i] for i in range(3)
+    )
+
+
 def crop_to_input(x, original_shape):
     # x: (B,C,H,W,D) after UNet
     # original_shape: (H_in, W_in, D_in)
@@ -90,14 +96,17 @@ class UNETR_PP(SegmentationNetwork):
             raise KeyError(f"Position embedding layer of type {pos_embed} is not supported.")
 
         self.patch_size = (2, 2, 2)
+        self._pad_mult = (16, 16, 16)
+        self._padded_img_size = padded_size_from_img_size(img_size, self._pad_mult)
         self.feat_size = (
-            img_size[0] // self.patch_size[0] // 8,  # 8 is the downsampling happened through the four encoders stages
-            img_size[1] // self.patch_size[1] // 8,  # 8 is the downsampling happened through the four encoders stages
-            img_size[2] // self.patch_size[2] // 8,  # 8 is the downsampling happened through the four encoders stages
+            self._padded_img_size[0] // self.patch_size[0] // 8,  # total downsample = 16
+            self._padded_img_size[1] // self.patch_size[1] // 8,
+            self._padded_img_size[2] // self.patch_size[2] // 8,
         )
         self.hidden_size = hidden_size
 
-        self.unetr_pp_encoder = UnetrPPEncoder(dims=dims, depths=depths, num_heads=num_heads, img_size=img_size)
+        self.unetr_pp_encoder = UnetrPPEncoder(dims=dims, depths=depths, num_heads=num_heads,
+                                               img_size=self._padded_img_size)
 
         self.encoder1 = UnetResBlock(
             spatial_dims=3,
@@ -114,7 +123,7 @@ class UNETR_PP(SegmentationNetwork):
             kernel_size=3,
             upsample_kernel_size=2,
             norm_name=norm_name,
-            out_size=img_size[0] // 8 * img_size[1] // 8 * img_size[2] // 8,
+            out_size=self._padded_img_size[0] // 8 * self._padded_img_size[1] // 8 * self._padded_img_size[2] // 8,
         )
         self.decoder4 = UnetrUpBlock(
             spatial_dims=3,
@@ -123,7 +132,7 @@ class UNETR_PP(SegmentationNetwork):
             kernel_size=3,
             upsample_kernel_size=2,
             norm_name=norm_name,
-            out_size=img_size[0] // 4 * img_size[1] // 4 * img_size[2] // 4,
+            out_size=self._padded_img_size[0] // 4 * self._padded_img_size[1] // 4 * self._padded_img_size[2] // 4,
         )
         self.decoder3 = UnetrUpBlock(
             spatial_dims=3,
@@ -132,7 +141,7 @@ class UNETR_PP(SegmentationNetwork):
             kernel_size=3,
             upsample_kernel_size=2,
             norm_name=norm_name,
-            out_size=img_size[0] // 2 * img_size[1] // 2 * img_size[2] // 2,
+            out_size=self._padded_img_size[0] // 2 * self._padded_img_size[1] // 2 * self._padded_img_size[2] // 2,
         )
         self.decoder2 = UnetrUpBlock(
             spatial_dims=3,
@@ -141,7 +150,7 @@ class UNETR_PP(SegmentationNetwork):
             kernel_size=3,
             upsample_kernel_size=2,
             norm_name=norm_name,
-            out_size=img_size[0] * img_size[1] * img_size[2],
+            out_size=self._padded_img_size[0] * self._padded_img_size[1] * self._padded_img_size[2],
             conv_decoder=True,
         )
         self.out1 = UnetOutBlock(spatial_dims=3, in_channels=feature_size, out_channels=out_channels)
@@ -157,7 +166,7 @@ class UNETR_PP(SegmentationNetwork):
     def forward(self, x_in):
         # pad the imgs to 64x64x64
         original_shape = x_in.shape[2:]
-        x_in = pad_to_multiple(x_in, mult=(8, 8, 8))
+        x_in = pad_to_multiple(x_in, mult=self._pad_mult)
 
         x_output, hidden_states = self.unetr_pp_encoder(x_in)
 
@@ -187,8 +196,10 @@ class UNETR_PP(SegmentationNetwork):
             logits = [self.out1(out), self.out2(dec1), self.out3(dec2)]
             # crop back to the original size
             logits[0] = crop_to_input(logits[0], original_shape)
-            logits[1] = crop_to_input(logits[1], (original_shape[0] // 2, original_shape[1] // 2, original_shape[2] // 2))
-            logits[2] = crop_to_input(logits[2], (original_shape[0] // 4, original_shape[1] // 4, original_shape[2] // 4))
+            logits[1] = crop_to_input(logits[1],
+                                      (original_shape[0] // 2, original_shape[1] // 2, original_shape[2] // 2))
+            logits[2] = crop_to_input(logits[2],
+                                      (original_shape[0] // 4, original_shape[1] // 4, original_shape[2] // 4))
 
         else:
             logits = self.out1(out)

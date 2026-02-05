@@ -26,8 +26,10 @@ class UnetrPPEncoder(nn.Module):
             dims = [32, 64, 128, 256]
         if input_size is None:
             input_size = [32 * 32 * 32, 16 * 16 * 16, 8 * 8 * 8, 4 * 4 * 4]
+        input_size = list(input_size)
 
         self.downsample_layers = nn.ModuleList()  # stem and 3 intermediate downsampling conv layers
+        # keep kernel/stride in sync with UNETR++ downsampling: 4 stages -> total factor 16
         stem_layer = nn.Sequential(
             get_conv_layer(spatial_dims, in_channels, dims[0], kernel_size=(2, 2, 2), stride=(2, 2, 2),
                            dropout=dropout, conv_only=True, ),
@@ -35,7 +37,10 @@ class UnetrPPEncoder(nn.Module):
         )
         self.downsample_layers.append(stem_layer)
 
-        # calculate dimension of the input after stem layer
+        if img_size is None:
+            raise ValueError("img_size must be provided so input_size matches padded inputs")
+
+        # calculate dimension of the input after each downsample layer
         x = torch.rand(1, in_channels, img_size[0], img_size[1], img_size[2])
         x = self.downsample_layers[0](x)
         _, _, h, w, d = x.shape
