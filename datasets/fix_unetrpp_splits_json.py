@@ -8,23 +8,23 @@ from sklearn.model_selection import GroupKFold
 
 
 def get_patient_id_MNI(case_name):
-    match = re.search(r's\\d+', case_name)
+    match = re.search(r's\d+', case_name)
     return match.group() if match else case_name
 
 
 def get_patient_id_ADNI(case_name):
-    match = re.search(r'adni_\\d+', case_name)
+    match = re.search(r'adni_\d+', case_name)
     return match.group() if match else case_name
 
 
 def get_patient_id_COBRA(case_name):
-    match = re.search(r'cobra_\\d+', case_name)
+    match = re.search(r'cobra_\d+', case_name)
     return match.group() if match else case_name
 
 
 def infer_dataset_from_path(path):
     base = os.path.basename(os.path.dirname(path))
-    match = re.search(r'_(MNI|ADNI|COBRA)\\b', base, flags=re.IGNORECASE)
+    match = re.search(r'_(MNI|ADNI|COBRA)\b', base, flags=re.IGNORECASE)
     if match:
         return match.group(1).upper()
     return None
@@ -46,7 +46,7 @@ def main():
     parser.add_argument("-o", "--output", required=True, help="Output JSON path")
     parser.add_argument("-d", "--dataset", default=None, help="dataset codename (MNI, ADNI, COBRA)")
     parser.add_argument("--seed", type=int, default=42, help="random seed for shuffle")
-    parser.add_argument("--shuffle", action="store_true", help="use GroupKFold shuffle")
+
     args = parser.parse_args()
 
     with open(args.input, "r") as f:
@@ -67,7 +67,7 @@ def main():
 
     groups = [get_patient_id(c, dataset) for c in all_cases]
 
-    gkf = GroupKFold(n_splits=5, shuffle=args.shuffle, random_state=args.seed)
+    gkf = GroupKFold(n_splits=5, shuffle=True, random_state=args.seed)
 
     new_splits = []
     cases_array = np.array(all_cases)
