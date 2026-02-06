@@ -16,6 +16,9 @@ artifact = wandb.Artifact(
 
 artifact.add_dir(args.model_path)
 
+# save also plans.pkl in the upper folder
+artifact.add_file(f"{args.model_path}/../plans.pkl", name="plans.pkl")
+
 wandb.log_artifact(artifact)
 
 wandb.finish()
