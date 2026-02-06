@@ -156,6 +156,8 @@ def get_all_labels(dir, name=''):
     metadata = [("_".join(sid.split('_')[:-1]), sid.split('_')[-1]) for sid in metadata]
     subject_ids = [sid for sid, _ in metadata]
     image_ids = [img_id for _, img_id in metadata]
+
+
     df = pd.DataFrame({'data': data_list, 'filename': files, 'subject_id': subject_ids, 'image_id': image_ids,
                        'direction': [direction] * len(files), 'crop_idx': crop_idxs})
 
@@ -185,6 +187,7 @@ def merge_image_data_to_label_data(df, dir):
         image_id = filename.split('_')[4]
         key = (subject_id, image_id)
         image_data_dict[key] = data
+        print(f'Loaded {filename} for subject_id={subject_id}, image_id={image_id}')
         del img
 
     # now merge
