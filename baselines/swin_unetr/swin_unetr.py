@@ -11,6 +11,7 @@ import argparse
 import re
 import json
 from sklearn.model_selection import GroupKFold
+import os
 
 
 set_determinism(seed=0)
@@ -90,6 +91,7 @@ def train_with_optimizer(
     num_classes,
     optimizer,
     scheduler,
+    wandb_run=None,
 ):
     device = next(model.parameters()).device
     loss_fn = DiceLoss(to_onehot_y=True, softmax=True)
@@ -115,6 +117,16 @@ def train_with_optimizer(
         soft_dice, hard_dice = evaluate(model, val_loader, device, num_classes=num_classes)
         print(f"Val Dice (soft): {soft_dice:.4f}")
         print(f"Val Dice (hard): {hard_dice:.4f}")
+        if wandb_run is not None:
+            wandb_run.log(
+                {
+                    "train/loss": avg_loss,
+                    "val/dice_soft": soft_dice,
+                    "val/dice_hard": hard_dice,
+                    "lr": current_lr,
+                },
+                step=epoch + 1,
+            )
 
 
 def _case_name_from_row(row, dataset):
@@ -292,6 +304,8 @@ def main():
         help="Optimizer/schedule preset",
     )
     parser.add_argument("--adamw-gamma", type=float, default=0.5, help="StepLR gamma for adamw_0.01")
+    parser.add_argument("--wandb", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--model-out-dir", default="models/swin_unetr")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -341,6 +355,24 @@ def main():
     optimizer, scheduler = build_optimizer_and_scheduler(
         args.optim_mode, model, args.epochs, adamw_gamma=args.adamw_gamma
     )
+    wandb_run = None
+    if args.wandb:
+        import wandb
+
+        wandb_run = wandb.init(project="hippopotamus-project", entity="hippopotamus")
+        wandb_run.config.update(
+            {
+                "dataset": args.dataset,
+                "pkl": args.pkl,
+                "fold": args.fold,
+                "epochs": args.epochs,
+                "batch_size": args.batch_size,
+                "optim_mode": args.optim_mode,
+                "adamw_gamma": args.adamw_gamma,
+                "num_classes": num_classes,
+            },
+            allow_val_change=True,
+        )
     train_with_optimizer(
         model,
         train_loader,
@@ -349,7 +381,23 @@ def main():
         num_classes=num_classes,
         optimizer=optimizer,
         scheduler=scheduler,
+        wandb_run=wandb_run,
     )
+
+    os.makedirs(args.model_out_dir, exist_ok=True)
+    fold_dir = os.path.join(args.model_out_dir, f"{args.dataset}_fold{args.fold}")
+    os.makedirs(fold_dir, exist_ok=True)
+    model_path = os.path.join(fold_dir, "model.pt")
+    torch.save(model.state_dict(), model_path)
+
+    if wandb_run is not None:
+        artifact = wandb.Artifact(
+            name=f"swinunetr-model-{args.dataset}-fold{args.fold}",
+            type="model",
+        )
+        artifact.add_file(model_path, name="model.pt")
+        wandb_run.log_artifact(artifact)
+        wandb_run.finish()
 
 
 if __name__ == "__main__":
