@@ -51,12 +51,48 @@ def evaluate(model, val_loader, device, num_classes):
     return soft_score.cpu().item(), hard_score.cpu().item()
 
 
-def train(model, train_loader, val_loader, num_epochs=20, num_classes=2):
+def build_optimizer_and_scheduler(mode, model, num_epochs):
+    if mode == "adamw_0.01":
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-2, weight_decay=1e-5)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
+        return optimizer, scheduler
+    if mode == "nnunetv2":
+        optimizer = torch.optim.SGD(
+            model.parameters(),
+            lr=1e-2,
+            momentum=0.99,
+            nesterov=True,
+            weight_decay=3e-5,
+        )
+        scheduler = PolyLRScheduler(optimizer, initial_lr=1e-2, max_epochs=num_epochs, exponent=0.9)
+        return optimizer, scheduler
+    raise ValueError(f"Unknown optimizer mode: {mode}")
+
+
+class PolyLRScheduler:
+    def __init__(self, optimizer, initial_lr, max_epochs, exponent=0.9):
+        self.optimizer = optimizer
+        self.initial_lr = initial_lr
+        self.max_epochs = max_epochs
+        self.exponent = exponent
+
+    def step(self, epoch):
+        lr = self.initial_lr * (1 - epoch / self.max_epochs) ** self.exponent
+        for pg in self.optimizer.param_groups:
+            pg["lr"] = lr
+
+
+def train_with_optimizer(
+    model,
+    train_loader,
+    val_loader,
+    num_epochs,
+    num_classes,
+    optimizer,
+    scheduler,
+):
     device = next(model.parameters()).device
     loss_fn = DiceLoss(to_onehot_y=True, softmax=True)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
-
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
 
     for epoch in range(num_epochs):
         model.train()
@@ -70,13 +106,15 @@ def train(model, train_loader, val_loader, num_epochs=20, num_classes=2):
             optimizer.step()
             epoch_loss += loss.item()
 
+        if scheduler is not None:
+            scheduler.step(epoch + 1)
+
         avg_loss = epoch_loss / max(1, len(train_loader))
         current_lr = optimizer.param_groups[0]["lr"]
         print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {avg_loss:.4f}, LR: {current_lr:.6g}")
         soft_dice, hard_dice = evaluate(model, val_loader, device, num_classes=num_classes)
         print(f"Val Dice (soft): {soft_dice:.4f}")
         print(f"Val Dice (hard): {hard_dice:.4f}")
-        scheduler.step()
 
 
 def _case_name_from_row(row, dataset):
@@ -247,6 +285,12 @@ def main():
     parser.add_argument("--splits-json", default=None, help="Use an existing splits JSON for exact train/val")
     parser.add_argument("--debug-stats", action="store_true", help="Print one batch of image/label stats")
     parser.add_argument("--num-classes", type=int, default=None, help="Override inferred number of classes")
+    parser.add_argument(
+        "--optim-mode",
+        default="adamw_0.01",
+        choices=["adamw_0.01", "nnunetv2"],
+        help="Optimizer/schedule preset",
+    )
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -293,7 +337,16 @@ def main():
         for batch in train_loader:
             _print_batch_stats(batch["image"], batch["label"], prefix="Train")
             break
-    train(model, train_loader, val_loader, num_epochs=args.epochs, num_classes=num_classes)
+    optimizer, scheduler = build_optimizer_and_scheduler(args.optim_mode, model, args.epochs)
+    train_with_optimizer(
+        model,
+        train_loader,
+        val_loader,
+        num_epochs=args.epochs,
+        num_classes=num_classes,
+        optimizer=optimizer,
+        scheduler=scheduler,
+    )
 
 
 if __name__ == "__main__":
