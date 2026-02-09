@@ -1,5 +1,5 @@
 from monai.utils import set_determinism
-from monai.transforms import Compose, EnsureChannelFirstd, NormalizeIntensityd, Resized, EnsureTyped, Lambdad
+from monai.transforms import Compose, EnsureChannelFirstd, NormalizeIntensityd, Resized, EnsureTyped, Lambdad, DivisiblePadd
 from monai.data import DataLoader, Dataset as MonaiDataset
 from monai.metrics import DiceMetric
 from monai.networks.nets import SwinUNETR
@@ -162,6 +162,7 @@ def _build_monai_dataset_from_pkl(df, dataset, num_classes, spatial_size=(64, 64
         EnsureChannelFirstd(keys=["image", "label"], channel_dim="no_channel"),
         # nnU-Net default for non-CT modalities is per-case z-score
         NormalizeIntensityd(keys=["image"], nonzero=True, channel_wise=True),
+        DivisiblePadd(keys=["image", "label"], k=32, mode=("constant", "constant")),
         Lambdad(
             keys=["label"],
             func=lambda x: torch.clamp(torch.round(torch.as_tensor(x)), 0, num_classes - 1),
