@@ -1,5 +1,5 @@
 from monai.utils import set_determinism
-from monai.transforms import Compose, EnsureChannelFirstd, ScaleIntensityd, Resized, EnsureTyped, Lambdad
+from monai.transforms import Compose, EnsureChannelFirstd, NormalizeIntensityd, Resized, EnsureTyped, Lambdad
 from monai.data import DataLoader, Dataset as MonaiDataset
 from monai.metrics import DiceMetric
 from monai.networks.nets import SwinUNETR
@@ -139,7 +139,7 @@ def _infer_num_classes(df, dataset):
     return max_label + 1
 
 
-def _build_monai_dataset_from_pkl(df, dataset, num_classes, spatial_size=(64, 64, 64)):
+def _build_monai_dataset_from_pkl(df, dataset, num_classes, spatial_size=(64, 64, 64), do_resize=False):
     dataset = dataset.upper()
     if dataset in {"MSD", "COBRA"}:
         image_key = "image_data"
@@ -158,16 +158,22 @@ def _build_monai_dataset_from_pkl(df, dataset, num_classes, spatial_size=(64, 64
             "label": row[label_key],
         })
 
-    transforms = Compose([
+    xforms = [
         EnsureChannelFirstd(keys=["image", "label"], channel_dim="no_channel"),
-        ScaleIntensityd(keys=["image"]),
-        Resized(keys=["image", "label"], spatial_size=spatial_size, mode=("trilinear", "nearest")),
+        # nnU-Net default for non-CT modalities is per-case z-score
+        NormalizeIntensityd(keys=["image"], nonzero=True, channel_wise=True),
         Lambdad(
             keys=["label"],
             func=lambda x: torch.clamp(torch.round(torch.as_tensor(x)), 0, num_classes - 1),
         ),
         EnsureTyped(keys=["image", "label"], dtype=(torch.float32, torch.long)),
-    ])
+    ]
+    if do_resize:
+        xforms.insert(
+            2,
+            Resized(keys=["image", "label"], spatial_size=spatial_size, mode=("trilinear", "nearest")),
+        )
+    transforms = Compose(xforms)
 
     return MonaiDataset(data=records, transform=transforms)
 
@@ -208,6 +214,13 @@ def _print_batch_stats(images, labels, prefix="Train"):
     img_max = img.max().item()
     img_mean = img.mean().item()
     img_std = img.std().item()
+    nonzero = img != 0
+    if nonzero.any():
+        nz_mean = img[nonzero].mean().item()
+        nz_std = img[nonzero].std().item()
+    else:
+        nz_mean = float("nan")
+        nz_std = float("nan")
     lbl_min = lbl.min().item()
     lbl_max = lbl.max().item()
     uniq = torch.unique(labels.detach().cpu()).tolist()
@@ -215,6 +228,7 @@ def _print_batch_stats(images, labels, prefix="Train"):
     print(
         f"{prefix} batch stats | image min/max/mean/std: "
         f"{img_min:.4f}/{img_max:.4f}/{img_mean:.4f}/{img_std:.4f} | "
+        f"nonzero mean/std: {nz_mean:.4f}/{nz_std:.4f} | "
         f"label min/max: {lbl_min:.0f}/{lbl_max:.0f} | labels: {uniq}"
     )
 
@@ -227,6 +241,7 @@ def main():
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--spatial-size", type=int, nargs=3, default=[64, 64, 64])
+    parser.add_argument("--resize", action="store_true", help="Enable resize to --spatial-size")
     parser.add_argument("--splits-out", default=None, help="Optional JSON output path for all splits")
     parser.add_argument("--splits-json", default=None, help="Use an existing splits JSON for exact train/val")
     parser.add_argument("--debug-stats", action="store_true", help="Print one batch of image/label stats")
@@ -242,6 +257,7 @@ def main():
         args.dataset,
         num_classes,
         spatial_size=tuple(args.spatial_size),
+        do_resize=args.resize,
     )
 
     case_names = [item["case_name"] for item in monai_dataset.data]
