@@ -51,10 +51,10 @@ def evaluate(model, val_loader, device, num_classes):
     return soft_score.cpu().item(), hard_score.cpu().item()
 
 
-def build_optimizer_and_scheduler(mode, model, num_epochs):
+def build_optimizer_and_scheduler(mode, model, num_epochs, adamw_gamma=0.5):
     if mode == "adamw_0.01":
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-2, weight_decay=1e-5)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=adamw_gamma)
         return optimizer, scheduler
     if mode == "nnunetv2":
         optimizer = torch.optim.SGD(
@@ -291,6 +291,7 @@ def main():
         choices=["adamw_0.01", "nnunetv2"],
         help="Optimizer/schedule preset",
     )
+    parser.add_argument("--adamw-gamma", type=float, default=0.5, help="StepLR gamma for adamw_0.01")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -337,7 +338,9 @@ def main():
         for batch in train_loader:
             _print_batch_stats(batch["image"], batch["label"], prefix="Train")
             break
-    optimizer, scheduler = build_optimizer_and_scheduler(args.optim_mode, model, args.epochs)
+    optimizer, scheduler = build_optimizer_and_scheduler(
+        args.optim_mode, model, args.epochs, adamw_gamma=args.adamw_gamma
+    )
     train_with_optimizer(
         model,
         train_loader,
