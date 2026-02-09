@@ -1,0 +1,82 @@
+[
+    {
+        "train": [
+            "hippocampus_cobra_1_L",
+            "hippocampus_cobra_1_R",
+            "hippocampus_cobra_3_L",
+            "hippocampus_cobra_3_R",
+            "hippocampus_cobra_4_L",
+            "hippocampus_cobra_4_R",
+            "hippocampus_cobra_5_L",
+            "hippocampus_cobra_5_R"
+        ],
+        "val": [
+            "hippocampus_cobra_2_L",
+            "hippocampus_cobra_2_R"
+        ]
+    },
+    {
+        "train": [
+            "hippocampus_cobra_1_L",
+            "hippocampus_cobra_1_R",
+            "hippocampus_cobra_2_L",
+            "hippocampus_cobra_2_R",
+            "hippocampus_cobra_3_L",
+            "hippocampus_cobra_3_R",
+            "hippocampus_cobra_4_L",
+            "hippocampus_cobra_4_R"
+        ],
+        "val": [
+            "hippocampus_cobra_5_L",
+            "hippocampus_cobra_5_R"
+        ]
+    },
+    {
+        "train": [
+            "hippocampus_cobra_1_L",
+            "hippocampus_cobra_1_R",
+            "hippocampus_cobra_2_L",
+            "hippocampus_cobra_2_R",
+            "hippocampus_cobra_4_L",
+            "hippocampus_cobra_4_R",
+            "hippocampus_cobra_5_L",
+            "hippocampus_cobra_5_R"
+        ],
+        "val": [
+            "hippocampus_cobra_3_L",
+            "hippocampus_cobra_3_R"
+        ]
+    },
+    {
+        "train": [
+            "hippocampus_cobra_2_L",
+            "hippocampus_cobra_2_R",
+            "hippocampus_cobra_3_L",
+            "hippocampus_cobra_3_R",
+            "hippocampus_cobra_4_L",
+            "hippocampus_cobra_4_R",
+            "hippocampus_cobra_5_L",
+            "hippocampus_cobra_5_R"
+        ],
+        "val": [
+            "hippocampus_cobra_1_L",
+            "hippocampus_cobra_1_R"
+        ]
+    },
+    {
+        "train": [
+            "hippocampus_cobra_1_L",
+            "hippocampus_cobra_1_R",
+            "hippocampus_cobra_2_L",
+            "hippocampus_cobra_2_R",
+            "hippocampus_cobra_3_L",
+            "hippocampus_cobra_3_R",
+            "hippocampus_cobra_5_L",
+            "hippocampus_cobra_5_R"
+        ],
+        "val": [
+            "hippocampus_cobra_4_L",
+            "hippocampus_cobra_4_R"
+        ]
+    }
+]
