@@ -18,17 +18,38 @@ set_determinism(seed=0)
 torch.manual_seed(0)
 
 
-def evaluate(model, val_loader, device):
-    dice_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=True)
+def _one_hot(labels, num_classes):
+    if labels.ndim == 5 and labels.shape[1] == 1:
+        labels = labels.squeeze(1)
+    if labels.ndim != 4:
+        raise ValueError(f"Expected labels with shape (B,H,W,D), got {labels.shape}")
+    oh = torch.nn.functional.one_hot(labels.long(), num_classes=num_classes)
+    return oh.permute(0, 4, 1, 2, 3).float()
+
+
+def evaluate(model, val_loader, device, num_classes):
+    hard_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=True)
+    soft_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=True)
     model.eval()
     with torch.no_grad():
         for batch in val_loader:
-            images, labels = batch["image"].to(device), batch["label"].to(device).squeeze(1)
+            images = batch["image"].to(device)
+            labels = batch["label"].to(device)
             outputs = model(images)
-            preds = torch.argmax(outputs, dim=1).squeeze(1)
-            dice_metric(preds, labels)
-    dice_score, _ = dice_metric.aggregate()
-    return dice_score.cpu().item()
+
+            soft_preds = torch.softmax(outputs, dim=1)
+            hard_preds = torch.argmax(outputs, dim=1)
+
+            y = _one_hot(labels, num_classes)
+            y_soft = soft_preds
+            y_hard = _one_hot(hard_preds, num_classes)
+
+            soft_metric(y_soft, y)
+            hard_metric(y_hard, y)
+
+    soft_score, _ = soft_metric.aggregate()
+    hard_score, _ = hard_metric.aggregate()
+    return soft_score.cpu().item(), hard_score.cpu().item()
 
 
 def train(model, train_loader, val_loader, num_epochs=20):
@@ -52,9 +73,11 @@ def train(model, train_loader, val_loader, num_epochs=20):
             epoch_loss += loss.item()
 
         avg_loss = epoch_loss / max(1, len(train_loader))
-        print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {avg_loss:.4f}")
-        dice_score = evaluate(model, val_loader, device)
-        print(f"Val Dice: {dice_score:.4f}")
+        current_lr = optimizer.param_groups[0]["lr"]
+        print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {avg_loss:.4f}, LR: {current_lr:.6g}")
+        soft_dice, hard_dice = evaluate(model, val_loader, device, num_classes=model.out_channels)
+        print(f"Val Dice (soft): {soft_dice:.4f}")
+        print(f"Val Dice (hard): {hard_dice:.4f}")
         scheduler.step()
 
 
@@ -169,6 +192,35 @@ def _split_with_groupkfold(case_names, dataset, fold, n_splits=5):
     return splits, splits[fold]
 
 
+def _load_splits_json(path):
+    with open(path, "r") as f:
+        splits = json.load(f)
+    if not isinstance(splits, list) or not splits:
+        raise ValueError("splits JSON must be a non-empty list")
+    for i, fold in enumerate(splits):
+        if "train" not in fold or "val" not in fold:
+            raise ValueError(f"fold {i} missing train/val keys")
+    return splits
+
+
+def _print_batch_stats(images, labels, prefix="Train"):
+    img = images.detach().float()
+    lbl = labels.detach().float()
+    img_min = img.min().item()
+    img_max = img.max().item()
+    img_mean = img.mean().item()
+    img_std = img.std().item()
+    lbl_min = lbl.min().item()
+    lbl_max = lbl.max().item()
+    uniq = torch.unique(labels.detach().cpu()).tolist()
+    uniq = sorted(uniq)[:20]
+    print(
+        f"{prefix} batch stats | image min/max/mean/std: "
+        f"{img_min:.4f}/{img_max:.4f}/{img_mean:.4f}/{img_std:.4f} | "
+        f"label min/max: {lbl_min:.0f}/{lbl_max:.0f} | labels: {uniq}"
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--pkl", required=True, help="Path to dataset .pkl (gzip) file")
@@ -178,6 +230,8 @@ def main():
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--spatial-size", type=int, nargs=3, default=[64, 64, 64])
     parser.add_argument("--splits-out", default=None, help="Optional JSON output path for all splits")
+    parser.add_argument("--splits-json", default=None, help="Use an existing splits JSON for exact train/val")
+    parser.add_argument("--debug-stats", action="store_true", help="Print one batch of image/label stats")
     parser.add_argument("--num-classes", type=int, default=None, help="Override inferred number of classes")
     args = parser.parse_args()
 
@@ -193,12 +247,19 @@ def main():
     )
 
     case_names = [item["case_name"] for item in monai_dataset.data]
-    all_splits, split = _split_with_groupkfold(case_names, args.dataset, args.fold)
-    print(json.dumps(all_splits, indent=4))
-    if args.splits_out:
-        with open(args.splits_out, "w") as f:
-            json.dump(all_splits, f, indent=4)
-        print(f"Saved splits to {args.splits_out}")
+    if args.splits_json:
+        all_splits = _load_splits_json(args.splits_json)
+        if args.fold < 0 or args.fold >= len(all_splits):
+            raise ValueError(f"Fold must be in [0, {len(all_splits) - 1}]")
+        split = all_splits[args.fold]
+        print(json.dumps(all_splits, indent=4))
+    else:
+        all_splits, split = _split_with_groupkfold(case_names, args.dataset, args.fold)
+        print(json.dumps(all_splits, indent=4))
+        if args.splits_out:
+            with open(args.splits_out, "w") as f:
+                json.dump(all_splits, f, indent=4)
+            print(f"Saved splits to {args.splits_out}")
 
     train_set = set(split["train"])
     val_set = set(split["val"])
@@ -213,6 +274,10 @@ def main():
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False)
 
     model = SwinUNETR(in_channels=1, out_channels=num_classes, use_checkpoint=True).to(device)
+    if args.debug_stats:
+        for batch in train_loader:
+            _print_batch_stats(batch["image"], batch["label"], prefix="Train")
+            break
     train(model, train_loader, val_loader, num_epochs=args.epochs)
 
 
