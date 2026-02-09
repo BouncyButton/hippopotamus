@@ -1,5 +1,5 @@
 from monai.utils import set_determinism
-from monai.transforms import Compose, EnsureChannelFirstd, ScaleIntensityd, Resized, EnsureTyped
+from monai.transforms import Compose, EnsureChannelFirstd, ScaleIntensityd, Resized, EnsureTyped, Lambdad
 from monai.data import DataLoader, Dataset as MonaiDataset
 from monai.metrics import DiceMetric
 from monai.networks.nets import SwinUNETR
@@ -101,7 +101,24 @@ def _load_pkl_dataframe(pkl_path):
     return df
 
 
-def _build_monai_dataset_from_pkl(df, dataset, spatial_size=(64, 64, 64)):
+def _infer_num_classes(df, dataset):
+    dataset = dataset.upper()
+    if dataset in {"MSD", "COBRA"}:
+        label_key = "label_data"
+    elif dataset in {"MNI", "ADNI"}:
+        label_key = "data"
+    else:
+        raise ValueError(f"Unknown dataset: {dataset}")
+    max_label = 0
+    for _, row in df.iterrows():
+        arr = np.asarray(row[label_key])
+        if arr.size == 0:
+            continue
+        max_label = max(max_label, int(np.nanmax(arr)))
+    return max_label + 1
+
+
+def _build_monai_dataset_from_pkl(df, dataset, num_classes, spatial_size=(64, 64, 64)):
     dataset = dataset.upper()
     if dataset in {"MSD", "COBRA"}:
         image_key = "image_data"
@@ -124,6 +141,10 @@ def _build_monai_dataset_from_pkl(df, dataset, spatial_size=(64, 64, 64)):
         EnsureChannelFirstd(keys=["image", "label"], channel_dim="no_channel"),
         ScaleIntensityd(keys=["image"]),
         Resized(keys=["image", "label"], spatial_size=spatial_size, mode=("trilinear", "nearest")),
+        Lambdad(
+            keys=["label"],
+            func=lambda x: torch.clamp(torch.round(torch.as_tensor(x)), 0, num_classes - 1),
+        ),
         EnsureTyped(keys=["image", "label"], dtype=(torch.float32, torch.long)),
     ])
 
@@ -157,14 +178,17 @@ def main():
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--spatial-size", type=int, nargs=3, default=[64, 64, 64])
     parser.add_argument("--splits-out", default=None, help="Optional JSON output path for all splits")
+    parser.add_argument("--num-classes", type=int, default=None, help="Override inferred number of classes")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     df = _load_pkl_dataframe(args.pkl)
+    num_classes = args.num_classes or _infer_num_classes(df, args.dataset)
     monai_dataset = _build_monai_dataset_from_pkl(
         df,
         args.dataset,
+        num_classes,
         spatial_size=tuple(args.spatial_size),
     )
 
@@ -188,7 +212,7 @@ def main():
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False)
 
-    model = SwinUNETR(in_channels=1, out_channels=3, use_checkpoint=True).to(device)
+    model = SwinUNETR(in_channels=1, out_channels=num_classes, use_checkpoint=True).to(device)
     train(model, train_loader, val_loader, num_epochs=args.epochs)
 
 
