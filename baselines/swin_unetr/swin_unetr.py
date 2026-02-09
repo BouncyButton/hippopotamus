@@ -4,7 +4,6 @@ from monai.data import DataLoader, Dataset as MonaiDataset
 from monai.metrics import DiceMetric
 from monai.networks.nets import SwinUNETR
 from monai.losses import DiceLoss
-from monai.optimizers import WarmupCosineSchedule
 import torch
 import numpy as np
 import pandas as pd
@@ -57,8 +56,7 @@ def train(model, train_loader, val_loader, num_epochs=20, num_classes=2):
     loss_fn = DiceLoss(to_onehot_y=True, softmax=True)
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
 
-    steps = num_epochs * len(train_loader)
-    scheduler = WarmupCosineSchedule(optimizer, warmup_steps=steps // 10, t_total=steps)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
 
     for epoch in range(num_epochs):
         model.train()
