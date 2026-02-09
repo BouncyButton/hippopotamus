@@ -52,7 +52,7 @@ def evaluate(model, val_loader, device, num_classes):
     return soft_score.cpu().item(), hard_score.cpu().item()
 
 
-def train(model, train_loader, val_loader, num_epochs=20):
+def train(model, train_loader, val_loader, num_epochs=20, num_classes=2):
     device = next(model.parameters()).device
     loss_fn = DiceLoss(to_onehot_y=True, softmax=True)
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
@@ -75,7 +75,7 @@ def train(model, train_loader, val_loader, num_epochs=20):
         avg_loss = epoch_loss / max(1, len(train_loader))
         current_lr = optimizer.param_groups[0]["lr"]
         print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {avg_loss:.4f}, LR: {current_lr:.6g}")
-        soft_dice, hard_dice = evaluate(model, val_loader, device, num_classes=model.out_channels)
+        soft_dice, hard_dice = evaluate(model, val_loader, device, num_classes=num_classes)
         print(f"Val Dice (soft): {soft_dice:.4f}")
         print(f"Val Dice (hard): {hard_dice:.4f}")
         scheduler.step()
@@ -278,7 +278,7 @@ def main():
         for batch in train_loader:
             _print_batch_stats(batch["image"], batch["label"], prefix="Train")
             break
-    train(model, train_loader, val_loader, num_epochs=args.epochs)
+    train(model, train_loader, val_loader, num_epochs=args.epochs, num_classes=num_classes)
 
 
 if __name__ == "__main__":
