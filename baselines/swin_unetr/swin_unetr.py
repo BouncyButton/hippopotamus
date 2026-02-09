@@ -121,7 +121,7 @@ def _build_monai_dataset_from_pkl(df, dataset, spatial_size=(64, 64, 64)):
         })
 
     transforms = Compose([
-        EnsureChannelFirstd(keys=["image", "label"]),
+        EnsureChannelFirstd(keys=["image", "label"], channel_dim="no_channel"),
         ScaleIntensityd(keys=["image"]),
         Resized(keys=["image", "label"], spatial_size=spatial_size, mode=("trilinear", "nearest")),
         EnsureTyped(keys=["image", "label"], dtype=(torch.float32, torch.long)),
