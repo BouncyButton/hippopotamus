@@ -64,7 +64,7 @@ def download_artifact(api: wandb.Api, name: str, dst: Path) -> Path:
 
 def load_dataset_from_artifact(dataset_code: str, dataset_root: Path) -> MonaiDataset:
     artifact_name, pkl_name = DATASET_ARTIFACTS[dataset_code]
-    pkl_path = dataset_root / artifact_name / pkl_name
+    pkl_path = dataset_root / pkl_name
     if not pkl_path.exists():
         raise FileNotFoundError(f"Missing pkl: {pkl_path}")
 
