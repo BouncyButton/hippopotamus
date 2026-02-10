@@ -238,7 +238,11 @@ def evaluate_nnunet(
         print(f"Expected nnUNetPlans.json at: {plans_json}")
         print(f"Expected splits_final.json at: {splits_json}")
         try:
-            present = sorted([p.name for p in Path(metadata_root).iterdir()])\n        except Exception:\n            present = []\n        print(f\"Files present: {present}\")\n        return None
+            present = sorted([p.name for p in Path(metadata_root).iterdir()])
+        except Exception:
+            present = []
+        print(f"Files present: {present}")
+        return None
 
     with open(dataset_json, "r") as f:
         dataset_info = json.load(f)
