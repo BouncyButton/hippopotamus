@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import torch
 import wandb
+import nibabel as nib
 from monai.metrics import HausdorffDistanceMetric
 from monai.transforms import Compose, EnsureChannelFirstd, NormalizeIntensityd, EnsureTyped, DivisiblePadd
 from monai.data import Dataset as MonaiDataset, DataLoader
@@ -204,6 +205,127 @@ def evaluate_swinunetr(
     return FoldResult(metrics=agg, n_cases=n_cases)
 
 
+def _load_nifti(path: Path) -> np.ndarray:
+    return np.asarray(nib.load(str(path)).get_fdata())
+
+
+def _checkpoint_name_nnUNet(kind: str) -> str:
+    if kind == "best":
+        return "checkpoint_best.pth"
+    if kind == "latest":
+        return "checkpoint_latest.pth"
+    return "checkpoint_final.pth"
+
+
+def evaluate_nnunet(
+    model_root: Path,
+    metadata_root: Path,
+    dataset_root: Path,
+    dataset_name: str,
+    fold: int,
+    checkpoint_kind: str,
+    device: torch.device,
+    output_dir: Path,
+) -> Optional[FoldResult]:
+    from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
+
+    dataset_json = metadata_root / "dataset.json"
+    plans_json = metadata_root / "nnUNetPlans.json"
+    splits_json = metadata_root / "splits_final.json"
+    if not dataset_json.exists() or not plans_json.exists() or not splits_json.exists():
+        print(f"Missing metadata files in {metadata_root}")
+        return None
+
+    with open(dataset_json, "r") as f:
+        dataset_info = json.load(f)
+    file_ending = dataset_info["file_ending"]
+
+    with open(splits_json, "r") as f:
+        splits = json.load(f)
+    if fold >= len(splits):
+        print(f"Fold {fold} not available in splits")
+        return None
+    val_cases = splits[fold]["val"]
+
+    # assemble model folder
+    model_dir = model_root / "nnunet_model"
+    fold_dir = model_dir / f"fold_{fold}"
+    if model_dir.exists():
+        shutil.rmtree(model_dir)
+    fold_dir.mkdir(parents=True, exist_ok=True)
+
+    # copy checkpoints into fold_dir
+    for item in model_root.iterdir():
+        if item.is_file():
+            shutil.copy(item, fold_dir / item.name)
+
+    # add required metadata files
+    shutil.copy(plans_json, model_dir / "plans.json")
+    shutil.copy(dataset_json, model_dir / "dataset.json")
+
+    ckpt_name = _checkpoint_name_nnUNet(checkpoint_kind)
+    if not (fold_dir / ckpt_name).exists():
+        print(f"Missing checkpoint {ckpt_name} in {fold_dir}")
+        return None
+
+    predictor = nnUNetPredictor(device=device, verbose=False)
+    predictor.initialize_from_trained_model_folder(
+        str(model_dir),
+        use_folds=(fold,),
+        checkpoint_name=ckpt_name,
+    )
+
+    images_dir = dataset_root / dataset_name / "imagesTr"
+    labels_dir = dataset_root / dataset_name / "labelsTr"
+    input_dir = output_dir / "nnunet_inputs"
+    pred_dir = output_dir / "predictions"
+    if input_dir.exists():
+        shutil.rmtree(input_dir)
+    if pred_dir.exists():
+        shutil.rmtree(pred_dir)
+    input_dir.mkdir(parents=True, exist_ok=True)
+    pred_dir.mkdir(parents=True, exist_ok=True)
+
+    for case in val_cases:
+        src = images_dir / f"{case}_0000{file_ending}"
+        if not src.exists():
+            print(f"Missing input image {src}")
+            continue
+        shutil.copy(src, input_dir / src.name)
+
+    predictor.predict_from_files(
+        str(input_dir),
+        str(pred_dir),
+        save_probabilities=True,
+        overwrite=True,
+    )
+
+    metrics_accum = []
+    hd_values = []
+    n_cases = 0
+    num_classes = int(np.max(_load_nifti(labels_dir / f"{val_cases[0]}{file_ending}"))) + 1
+
+    for case in val_cases:
+        pred_file = pred_dir / f"{case}{file_ending}"
+        prob_file = pred_dir / f"{case}.npz"
+        label_file = labels_dir / f"{case}{file_ending}"
+        if not pred_file.exists() or not prob_file.exists() or not label_file.exists():
+            continue
+        probs = np.load(prob_file)["probabilities"]
+        labels = _load_nifti(label_file).astype(np.int64)
+        probs_t = torch.from_numpy(probs).unsqueeze(0)
+        labels_t = torch.from_numpy(labels).unsqueeze(0).unsqueeze(0)
+        metrics_accum.append(compute_metrics_hard_soft(probs_t, labels_t, probs.shape[0]))
+        hard = torch.argmax(probs_t, dim=1)
+        hd_values.append(compute_hd95(hard, labels_t, probs.shape[0]))
+        n_cases += 1
+
+    if n_cases == 0:
+        return None
+    agg = {k: float(np.mean([m[k] for m in metrics_accum])) for k in metrics_accum[0].keys()}
+    agg["hd95"] = float(np.mean(hd_values))
+    return FoldResult(metrics=agg, n_cases=n_cases)
+
 def save_predictions_as_artifact(run: wandb.sdk.wandb_run.Run, artifact_name: str, pred_dir: Path):
     artifact = wandb.Artifact(name=artifact_name, type="predictions")
     artifact.add_dir(str(pred_dir))
@@ -243,7 +365,7 @@ def main():
     parser.add_argument("--methods", nargs="+", default=["nnunet", "unetrpp", "swinunetr"])
     parser.add_argument("--datasets", nargs="+", default=["MSD", "MNI", "ADNI", "COBRA"])
     parser.add_argument("--folds", nargs="+", type=int, default=[0, 1, 2, 3, 4])
-    parser.add_argument("--checkpoint", choices=["latest", "best", "final"], default="latest")
+    parser.add_argument("--checkpoint", choices=["latest", "best", "final"], default="final")
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--output-dir", default="evaluation/output")
     parser.add_argument("--no-wandb", action="store_true")
@@ -265,6 +387,9 @@ def main():
     seed_everything(0)
 
     api = wandb.Api()
+    wandb_run = None
+    if cfg.use_wandb:
+        wandb_run = wandb.init(project=cfg.project, entity=cfg.entity)
 
     results: Dict[str, Dict[str, List[float]]] = {m: {d: [] for d in cfg.datasets} for m in cfg.methods}
 
@@ -280,6 +405,18 @@ def main():
         dataset_path = download_artifact(api, dataset_artifact_id, dataset_root)
         dataset = load_dataset_from_artifact(dataset_code, dataset_root)
         num_classes = infer_num_classes(dataset)
+
+        metadata_root = None
+        metadata_artifact_id = f"{cfg.entity}/{cfg.project}/nnunet-metadata-{dataset_code}:latest"
+        try:
+            metadata_root = download_artifact(
+                api,
+                metadata_artifact_id,
+                cfg.output_dir / "artifacts" / "nnunet_metadata" / dataset_code,
+            )
+        except Exception as e:
+            metadata_root = None
+            print(f"Missing nnUNet metadata artifact {metadata_artifact_id}: {e}")
 
         for method in cfg.methods:
             if method not in MODEL_ARTIFACTS:
@@ -316,21 +453,42 @@ def main():
                         cfg.batch_size,
                         pred_dir=pred_dir,
                     )
+                elif method == "nnunet":
+                    if metadata_root is None:
+                        print(f"No metadata available for nnUNet {dataset_code}")
+                        continue
+                    pred_dir = cfg.output_dir / "predictions" / method / dataset_code / f"fold{fold}"
+                    ensure_dir(pred_dir)
+                    fold_result = evaluate_nnunet(
+                        model_root=model_path,
+                        metadata_root=Path(metadata_root),
+                        dataset_root=dataset_root,
+                        dataset_name=dataset_artifact_name,
+                        fold=fold,
+                        checkpoint_kind=cfg.checkpoint,
+                        device=device,
+                        output_dir=pred_dir,
+                    )
+                    if fold_result is None:
+                        continue
                 else:
                     print(f"Method {method} evaluation not implemented in this script yet.")
                     continue
 
                 results[method][dataset_code].append(fold_result.metrics["dice_hard"])
 
-                if cfg.use_wandb:
-                    run = wandb.init(project=cfg.project, entity=cfg.entity)
-                    run.log({"dataset": dataset_code, "method": method, "fold": fold, **fold_result.metrics})
-                    with open(pred_dir / "metrics.json", "w") as f:
-                        json.dump(fold_result.metrics, f, indent=2)
-                    save_predictions_as_artifact(run, f"predictions-{method}-{dataset_code}-fold{fold}", pred_dir)
-                    run.finish()
+                if wandb_run is not None:
+                    wandb_run.log({"dataset": dataset_code, "method": method, "fold": fold, **fold_result.metrics})
+                with open(pred_dir / "metrics.json", "w") as f:
+                    json.dump(fold_result.metrics, f, indent=2)
+
+            pred_root = cfg.output_dir / "predictions" / method / dataset_code
+            if wandb_run is not None and pred_root.exists():
+                save_predictions_as_artifact(wandb_run, f"predictions-{method}-{dataset_code}", pred_root)
 
     print(latex_table(results, metric_name="dice_hard"))
+    if wandb_run is not None:
+        wandb_run.finish()
 
 
 if __name__ == "__main__":
