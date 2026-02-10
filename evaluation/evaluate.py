@@ -338,6 +338,13 @@ def evaluate_nnunet(
         labels = _load_nifti(label_file).astype(np.int64)
         probs_t = torch.from_numpy(probs).unsqueeze(0)
         labels_t = torch.from_numpy(labels).unsqueeze(0).unsqueeze(0)
+        # align prediction shape to label shape if needed via center crop
+        if labels_t.shape[2:] != probs_t.shape[2:]:
+            target = labels_t.shape[2:]
+            pred = probs_t.shape[2:]
+            start = [(pred[d] - target[d]) // 2 for d in range(3)]
+            end = [start[d] + target[d] for d in range(3)]
+            probs_t = probs_t[:, :, start[0]:end[0], start[1]:end[1], start[2]:end[2]]
         metrics_accum.append(compute_metrics_hard_soft(probs_t, labels_t, probs.shape[0]))
         hard = torch.argmax(probs_t, dim=1)
         hd_values.append(compute_hd95(hard, labels_t, probs.shape[0]))
