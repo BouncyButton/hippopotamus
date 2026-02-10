@@ -37,19 +37,7 @@ def main():
             "--verify_dataset_integrity",
         ])
 
-        # fix splits
-        fix_script = root / "hippopotamus" / "datasets" / "fix_nnunet_splits.py"
-        splits_file = preproc_dir / args.dataset_name / "splits_final.json"
-        subprocess.check_call([
-            "python",
-            str(fix_script),
-            "-i",
-            str(splits_file),
-            "-o",
-            str(splits_file),
-            "-d",
-            args.dataset_code,
-        ])
+        # splits are assumed to be already fixed/supplied
 
     # collect metadata files
     bundle_dir = root / "evaluation" / "nnunet_metadata" / args.dataset_name
