@@ -170,6 +170,7 @@ def evaluate_swinunetr(
     device: torch.device,
     batch_size: int,
     pred_dir: Optional[Path] = None,
+    max_cases: Optional[int] = None,
 ) -> FoldResult:
     from monai.networks.nets import SwinUNETR
 
@@ -198,6 +199,8 @@ def evaluate_swinunetr(
                     np.save(pred_dir / f"case_{idx:04d}_pred.npy", hard[i].cpu().numpy())
                     np.save(pred_dir / f"case_{idx:04d}_prob.npy", probs[i].cpu().numpy())
             n_cases += batch_size_actual
+            if max_cases is not None and n_cases >= max_cases:
+                break
 
     # aggregate
     agg = {k: float(np.mean([m[k] for m in metrics_accum])) for k in metrics_accum[0].keys()}
@@ -223,6 +226,7 @@ def evaluate_nnunet(
     dataset_root: Path,
     dataset_name: str,
     fold: int,
+    max_cases: Optional[int],
     checkpoint_kind: str,
     device: torch.device,
     output_dir: Path,
@@ -259,6 +263,8 @@ def evaluate_nnunet(
         print(f"Fold {fold} not available in splits")
         return None
     val_cases = splits[fold]["val"]
+    if max_cases is not None:
+        val_cases = val_cases[:max_cases]
 
     # assemble model folder
     model_dir = model_root / "nnunet_model"
@@ -420,6 +426,7 @@ def main():
     parser.add_argument("--checkpoint", choices=["latest", "best", "final"], default="final")
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--output-dir", default="evaluation/output")
+    parser.add_argument("--max-cases", type=int, default=None, help="Limit number of validation cases per fold")
     parser.add_argument("--no-wandb", action="store_true")
     args = parser.parse_args()
 
@@ -504,6 +511,7 @@ def main():
                         device,
                         cfg.batch_size,
                         pred_dir=pred_dir,
+                        max_cases=args.max_cases,
                     )
                 elif method == "nnunet":
                     if metadata_root is None:
@@ -517,6 +525,7 @@ def main():
                         dataset_root=dataset_root,
                         dataset_name=dataset_artifact_name,
                         fold=fold,
+                        max_cases=args.max_cases,
                         checkpoint_kind=cfg.checkpoint,
                         device=device,
                         output_dir=pred_dir,
