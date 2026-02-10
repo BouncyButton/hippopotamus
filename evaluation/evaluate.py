@@ -288,8 +288,18 @@ def evaluate_nnunet(
         checkpoint_name=ckpt_name,
     )
 
-    images_dir = dataset_root / dataset_name / "imagesTr"
-    labels_dir = dataset_root / dataset_name / "labelsTr"
+    # prefer real nnUNet_raw/datasets if available (e.g., /content/datasets)
+    nnunet_raw = os.environ.get("nnUNet_raw")
+    if nnunet_raw:
+        images_dir = Path(nnunet_raw) / dataset_name / "imagesTr"
+        labels_dir = Path(nnunet_raw) / dataset_name / "labelsTr"
+    else:
+        images_dir = dataset_root / dataset_name / "imagesTr"
+        labels_dir = dataset_root / dataset_name / "labelsTr"
+    if not images_dir.exists() or not labels_dir.exists():
+        # fallback to local repo datasets/
+        images_dir = Path("datasets") / dataset_name / "imagesTr"
+        labels_dir = Path("datasets") / dataset_name / "labelsTr"
     input_dir = output_dir / "nnunet_inputs"
     pred_dir = output_dir / "predictions"
     if input_dir.exists():
