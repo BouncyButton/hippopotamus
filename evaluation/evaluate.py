@@ -338,13 +338,24 @@ def evaluate_nnunet(
         labels = _load_nifti(label_file).astype(np.int64)
         probs_t = torch.from_numpy(probs).unsqueeze(0)
         labels_t = torch.from_numpy(labels).unsqueeze(0).unsqueeze(0)
-        # align prediction shape to label shape if needed via center crop
+        # align prediction/label shapes via center-crop of the larger tensor
         if labels_t.shape[2:] != probs_t.shape[2:]:
-            target = labels_t.shape[2:]
-            pred = probs_t.shape[2:]
-            start = [(pred[d] - target[d]) // 2 for d in range(3)]
-            end = [start[d] + target[d] for d in range(3)]
-            probs_t = probs_t[:, :, start[0]:end[0], start[1]:end[1], start[2]:end[2]]
+            print(f"Shape mismatch before crop: probs {tuple(probs_t.shape)} labels {tuple(labels_t.shape)}")
+            label_shape = labels_t.shape[2:]
+            pred_shape = probs_t.shape[2:]
+            target = tuple(min(label_shape[d], pred_shape[d]) for d in range(3))
+
+            def _center_crop(t, target_shape):
+                in_shape = t.shape[2:]
+                start = [(in_shape[d] - target_shape[d]) // 2 for d in range(3)]
+                end = [start[d] + target_shape[d] for d in range(3)]
+                return t[:, :, start[0]:end[0], start[1]:end[1], start[2]:end[2]]
+
+            if pred_shape != target:
+                probs_t = _center_crop(probs_t, target)
+            if label_shape != target:
+                labels_t = _center_crop(labels_t, target)
+            print(f"Shape after crop: probs {tuple(probs_t.shape)} labels {tuple(labels_t.shape)}")
         metrics_accum.append(compute_metrics_hard_soft(probs_t, labels_t, probs.shape[0]))
         hard = torch.argmax(probs_t, dim=1)
         hd_values.append(compute_hd95(hard, labels_t, probs.shape[0]))
