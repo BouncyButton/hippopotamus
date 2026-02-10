@@ -15,7 +15,11 @@ def main():
     parser.add_argument("--root", type=str, default=".")
     parser.add_argument("--project", type=str, default="hippopotamus-project")
     parser.add_argument("--entity", type=str, default="hippopotamus")
-    parser.add_argument("--splits-only", action="store_true", help="Skip preprocessing, only package metadata files")
+    parser.add_argument(
+        "--run-preprocess",
+        action="store_true",
+        help="Run nnUNetv2_plan_and_preprocess before packaging metadata",
+    )
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
@@ -27,7 +31,7 @@ def main():
     os.environ["nnUNet_preprocessed"] = str(preproc_dir)
     os.environ["nnUNet_results"] = str(results_dir)
 
-    if not args.splits_only:
+    if args.run_preprocess:
         # run preprocessing to generate plans and splits
         import subprocess
         subprocess.check_call([
