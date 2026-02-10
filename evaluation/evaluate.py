@@ -233,6 +233,9 @@ def evaluate_nnunet(
     plans_json = metadata_root / "nnUNetPlans.json"
     splits_json = metadata_root / "splits_final.json"
     if not splits_json.exists():
+        # prefer local repo datasets/ if present
+        splits_json = Path("datasets") / dataset_name / "splits_final.json"
+    if not splits_json.exists():
         splits_json = dataset_root / dataset_name / "splits_final.json"
     if not dataset_json.exists() or not plans_json.exists() or not splits_json.exists():
         print(f"Missing metadata files in {metadata_root}")
