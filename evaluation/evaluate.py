@@ -274,7 +274,7 @@ def main():
             continue
         dataset_artifact_name, _ = DATASET_ARTIFACTS[dataset_code]
         dataset_artifact_id = f"{cfg.entity}/{cfg.project}/{dataset_artifact_name}:latest"
-        dataset_root = cfg.output_dir / "artifacts" / dataset_code
+        dataset_root = cfg.output_dir / "artifacts" / dataset_artifact_name
         if dataset_root.exists():
             shutil.rmtree(dataset_root)
         dataset_path = download_artifact(api, dataset_artifact_id, dataset_root)
