@@ -38,7 +38,7 @@ def main():
         ])
 
         # fix splits
-        fix_script = root / "datasets" / "fix_nnunet_splits.py"
+        fix_script = root / "hippopotamus" / "datasets" / "fix_nnunet_splits.py"
         splits_file = preproc_dir / args.dataset_name / "splits_final.json"
         subprocess.check_call([
             "python",
