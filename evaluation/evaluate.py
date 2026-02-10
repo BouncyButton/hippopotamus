@@ -234,7 +234,11 @@ def evaluate_nnunet(
     splits_json = metadata_root / "splits_final.json"
     if not dataset_json.exists() or not plans_json.exists() or not splits_json.exists():
         print(f"Missing metadata files in {metadata_root}")
-        return None
+        print(f"Expected dataset.json at: {dataset_json}")
+        print(f"Expected nnUNetPlans.json at: {plans_json}")
+        print(f"Expected splits_final.json at: {splits_json}")
+        try:
+            present = sorted([p.name for p in Path(metadata_root).iterdir()])\n        except Exception:\n            present = []\n        print(f\"Files present: {present}\")\n        return None
 
     with open(dataset_json, "r") as f:
         dataset_info = json.load(f)
