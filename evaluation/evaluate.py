@@ -45,6 +45,7 @@ class EvalConfig:
     output_dir: Path
     use_wandb: bool
     batch_size: int
+    repo_root: str
 
 
 @dataclass
@@ -223,6 +224,7 @@ def _checkpoint_name_nnUNet(kind: str) -> str:
 def evaluate_nnunet(
     model_root: Path,
     metadata_root: Path,
+    repo_root: Path,
     dataset_root: Path,
     dataset_name: str,
     fold: int,
@@ -236,11 +238,9 @@ def evaluate_nnunet(
     dataset_json = metadata_root / "dataset.json"
     plans_json = metadata_root / "nnUNetPlans.json"
     splits_json = metadata_root / "splits_final.json"
+
     if not splits_json.exists():
-        # prefer local repo datasets/ if present
-        splits_json = Path("datasets") / dataset_name / "splits_final.json"
-    if not splits_json.exists():
-        splits_json = dataset_root / dataset_name / "splits_final.json"
+        splits_json = repo_root / Path("datasets") / dataset_name / "splits_final.json"
     if not dataset_json.exists() or not plans_json.exists() or not splits_json.exists():
         print(f"Missing metadata files in {metadata_root}")
         print(f"Expected dataset.json at: {dataset_json}")
@@ -428,6 +428,7 @@ def main():
     parser.add_argument("--output-dir", default="evaluation/output")
     parser.add_argument("--max-cases", type=int, default=None, help="Limit number of validation cases per fold")
     parser.add_argument("--no-wandb", action="store_true")
+    parser.add_argument("--repo-root", type=str, default=".", help="Root of the local repository (for nnUNet metadata fallback)")
     args = parser.parse_args()
 
     cfg = EvalConfig(
@@ -440,6 +441,7 @@ def main():
         output_dir=Path(args.output_dir),
         use_wandb=not args.no_wandb,
         batch_size=args.batch_size,
+        repo_root=args.repo_root,
     )
 
     ensure_dir(cfg.output_dir)
@@ -486,6 +488,7 @@ def main():
                 model_artifact = MODEL_ARTIFACTS[method].format(dataset=dataset_code, fold=fold)
                 model_artifact_id = f"{cfg.entity}/{cfg.project}/{model_artifact}:latest"
                 model_root = cfg.output_dir / "artifacts" / method / dataset_code / f"fold{fold}"
+                repo_root = cfg.repo_root
                 if model_root.exists():
                     shutil.rmtree(model_root)
 
@@ -522,6 +525,7 @@ def main():
                     fold_result = evaluate_nnunet(
                         model_root=model_path,
                         metadata_root=Path(metadata_root),
+                        repo_root=Path(repo_root),
                         dataset_root=dataset_root,
                         dataset_name=dataset_artifact_name,
                         fold=fold,
