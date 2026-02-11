@@ -237,6 +237,14 @@ def _checkpoint_name_nnUNet(kind: str) -> str:
     return "checkpoint_final.pth"
 
 
+def _checkpoint_name_unetrpp(kind: str) -> str:
+    if kind == "best":
+        return "model_best"
+    if kind == "latest":
+        return "model_latest"
+    return "model_final_checkpoint"
+
+
 def evaluate_nnunet(
         model_root: Path,
         metadata_root: Path,
@@ -257,6 +265,10 @@ def evaluate_nnunet(
 
     if not splits_json.exists():
         splits_json = repo_root / Path("datasets") / dataset_name / "splits_final.json"
+
+    if not dataset_json.exists():
+        dataset_json = repo_root / Path("datasets") / dataset_name / "dataset.json"
+
     if not dataset_json.exists() or not plans_json.exists() or not splits_json.exists():
         print(f"Missing metadata files in {metadata_root}")
         print(f"Expected dataset.json at: {dataset_json}")
@@ -400,6 +412,113 @@ def evaluate_nnunet(
     agg["hd95"] = float(np.mean(hd_values))
     return FoldResult(metrics=agg, n_cases=n_cases)
 
+
+def evaluate_unetrpp(
+    model_root: Path,
+    dataset_root: Path,
+    dataset_name: str,
+    fold: int,
+    checkpoint_kind: str,
+    device: torch.device,
+    output_dir: Path,
+    max_cases: Optional[int],
+) -> Optional[FoldResult]:
+    from unetr_pp.inference.predict import predict_cases
+
+    images_dir = dataset_root / dataset_name / "imagesTr"
+    labels_dir = dataset_root / dataset_name / "labelsTr"
+    nnunet_raw = os.environ.get("nnUNet_raw")
+    if nnunet_raw:
+        images_dir = Path(nnunet_raw) / dataset_name / "imagesTr"
+        labels_dir = Path(nnunet_raw) / dataset_name / "labelsTr"
+    if not images_dir.exists() or not labels_dir.exists():
+        images_dir = Path("datasets") / dataset_name / "imagesTr"
+        labels_dir = Path("datasets") / dataset_name / "labelsTr"
+
+    splits_json = Path("datasets") / dataset_name / "splits_final.json"
+    if not splits_json.exists():
+        splits_json = dataset_root / dataset_name / "splits_final.json"
+    if not splits_json.exists():
+        print(f"Missing splits_final.json for {dataset_name}")
+        return None
+
+    with open(splits_json, "r") as f:
+        splits = json.load(f)
+    if fold >= len(splits):
+        print(f"Fold {fold} not available in splits")
+        return None
+    val_cases = splits[fold]["val"]
+    if max_cases is not None:
+        val_cases = val_cases[:max_cases]
+
+    model_dir = model_root / "unetrpp_model"
+    fold_dir = model_dir / f"fold_{fold}"
+    if model_dir.exists():
+        shutil.rmtree(model_dir)
+    fold_dir.mkdir(parents=True, exist_ok=True)
+
+    # copy all files from artifact into fold dir and root (plans.pkl should exist)
+    for item in model_root.iterdir():
+        if item.is_file():
+            shutil.copy(item, fold_dir / item.name)
+    for item in model_root.iterdir():
+        if item.is_file() and item.name.endswith(".pkl"):
+            shutil.copy(item, model_dir / item.name)
+
+    ckpt_name = _checkpoint_name_unetrpp(checkpoint_kind)
+
+    input_lists = []
+    output_files = []
+    for case in val_cases:
+        img = images_dir / f"{case}_0000.nii.gz"
+        if not img.exists():
+            print(f"Missing input image {img}")
+            continue
+        input_lists.append([str(img)])
+        output_files.append(str(output_dir / f"{case}.nii.gz"))
+
+    if len(input_lists) == 0:
+        print("No valid cases to predict")
+        return None
+
+    predict_cases(
+        str(model_dir),
+        input_lists,
+        output_files,
+        folds=(fold,),
+        save_npz=True,
+        num_threads_preprocessing=2,
+        num_threads_nifti_save=2,
+        do_tta=False,
+        mixed_precision=True,
+        overwrite_existing=True,
+        all_in_gpu=False,
+        step_size=0.5,
+        checkpoint_name=ckpt_name,
+    )
+
+    metrics_accum = []
+    hd_values = []
+    n_cases = 0
+    for case in val_cases:
+        prob_file = output_dir / f"{case}.npz"
+        label_file = labels_dir / f"{case}.nii.gz"
+        if not prob_file.exists() or not label_file.exists():
+            continue
+        probs = np.load(prob_file)["probabilities"]
+        labels = _load_nifti(label_file).astype(np.int64)
+        probs_t = torch.from_numpy(probs).unsqueeze(0)
+        labels_t = torch.from_numpy(labels).unsqueeze(0).unsqueeze(0)
+        metrics_accum.append(compute_metrics_hard_soft(probs_t, labels_t, probs.shape[0]))
+        hard = torch.argmax(probs_t, dim=1)
+        hd_values.append(compute_hd95(hard, labels_t, probs.shape[0]))
+        n_cases += 1
+
+    if n_cases == 0:
+        return None
+    agg = {k: float(np.mean([m[k] for m in metrics_accum])) for k in metrics_accum[0].keys()}
+    agg["hd95"] = float(np.mean(hd_values))
+    return FoldResult(metrics=agg, n_cases=n_cases)
 
 def save_predictions_as_artifact(run: wandb.sdk.wandb_run.Run, artifact_name: str, pred_dir: Path):
     artifact = wandb.Artifact(name=artifact_name, type="predictions")
@@ -551,6 +670,21 @@ def main():
                         checkpoint_kind=cfg.checkpoint,
                         device=device,
                         output_dir=pred_dir,
+                    )
+                    if fold_result is None:
+                        continue
+                elif method == "unetrpp":
+                    pred_dir = cfg.output_dir / "predictions" / method / dataset_code / f"fold{fold}"
+                    ensure_dir(pred_dir)
+                    fold_result = evaluate_unetrpp(
+                        model_root=model_path,
+                        dataset_root=dataset_root,
+                        dataset_name=dataset_artifact_name,
+                        fold=fold,
+                        checkpoint_kind=cfg.checkpoint,
+                        device=device,
+                        output_dir=pred_dir,
+                        max_cases=args.max_cases,
                     )
                     if fold_result is None:
                         continue
