@@ -1,5 +1,6 @@
 from monai.utils import set_determinism
-from monai.transforms import Compose, EnsureChannelFirstd, NormalizeIntensityd, Resized, EnsureTyped, Lambdad, DivisiblePadd, SpatialPadd, CenterSpatialCropd
+from monai.transforms import Compose, EnsureChannelFirstd, NormalizeIntensityd, Resized, EnsureTyped, Lambdad, \
+    DivisiblePadd, SpatialPadd, CenterSpatialCropd
 from monai.data import DataLoader, Dataset as MonaiDataset
 from monai.metrics import DiceMetric
 from monai.networks.nets import SwinUNETR
@@ -11,7 +12,6 @@ import argparse
 import re
 import json
 import os
-
 
 set_determinism(seed=0)
 torch.manual_seed(0)
@@ -51,10 +51,10 @@ def evaluate(model, val_loader, device, num_classes):
     return soft_score.cpu().item(), hard_score.cpu().item()
 
 
-def build_optimizer_and_scheduler(mode, model, num_epochs, adamw_gamma=0.5):
+def build_optimizer_and_scheduler(mode, model, num_epochs, adamw_gamma=0.5, step_size=10):
     if mode == "adamw_0.01":
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-2, weight_decay=1e-5)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=adamw_gamma)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=adamw_gamma)
         return optimizer, scheduler
     if mode == "nnunetv2":
         optimizer = torch.optim.SGD(
@@ -83,14 +83,14 @@ class PolyLRScheduler:
 
 
 def train_with_optimizer(
-    model,
-    train_loader,
-    val_loader,
-    num_epochs,
-    num_classes,
-    optimizer,
-    scheduler,
-    wandb_run=None,
+        model,
+        train_loader,
+        val_loader,
+        num_epochs,
+        num_classes,
+        optimizer,
+        scheduler,
+        wandb_run=None,
 ):
     device = next(model.parameters()).device
     loss_fn = DiceLoss(to_onehot_y=True, softmax=True)
@@ -282,6 +282,7 @@ def main():
     parser.add_argument("--splits-json", default=None, help="Use an existing splits JSON for exact train/val")
     parser.add_argument("--debug-stats", action="store_true", help="Print one batch of image/label stats")
     parser.add_argument("--num-classes", type=int, default=None, help="Override inferred number of classes")
+    parser.add_argument("--step-size", type=int, default=10, help="StepLR step size for adamw_0.01 mode")
     parser.add_argument(
         "--optim-mode",
         default="adamw_0.01",
@@ -311,7 +312,6 @@ def main():
     if args.fold < 0 or args.fold >= len(all_splits):
         raise ValueError(f"Fold must be in [0, {len(all_splits) - 1}]")
     split = all_splits[args.fold]
-    print(json.dumps(all_splits, indent=4))
 
     train_set = set(split["train"])
     val_set = set(split["val"])
@@ -331,7 +331,8 @@ def main():
             _print_batch_stats(batch["image"], batch["label"], prefix="Train")
             break
     optimizer, scheduler = build_optimizer_and_scheduler(
-        args.optim_mode, model, args.epochs, adamw_gamma=args.adamw_gamma
+        args.optim_mode, model, args.epochs, adamw_gamma=args.adamw_gamma,
+        step_size=args.step_size if args.optim_mode == "adamw_0.01" else None,
     )
     wandb_run = None
     if args.wandb:
