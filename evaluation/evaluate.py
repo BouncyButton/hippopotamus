@@ -111,9 +111,9 @@ def one_hot(labels: torch.Tensor, num_classes: int) -> torch.Tensor:
 
 
 def compute_metrics_hard_soft(
-    probs: torch.Tensor,
-    labels: torch.Tensor,
-    num_classes: int,
+        probs: torch.Tensor,
+        labels: torch.Tensor,
+        num_classes: int,
 ) -> Dict[str, float]:
     # probs: (B, C, ...), labels: (B, 1, ...) or (B, ...)
     with torch.no_grad():
@@ -135,7 +135,8 @@ def compute_metrics_hard_soft(
 
         # soft dice
         soft_tp = (probs_fg * y_true_fg).sum(dim=(0, 2, 3, 4))
-        soft_dice = (2 * soft_tp / (probs_fg.sum(dim=(0, 2, 3, 4)) + y_true_fg.sum(dim=(0, 2, 3, 4)) + 1e-8)).mean().item()
+        soft_dice = (2 * soft_tp / (
+                    probs_fg.sum(dim=(0, 2, 3, 4)) + y_true_fg.sum(dim=(0, 2, 3, 4)) + 1e-8)).mean().item()
 
         recall = (tp / (tp + fn + 1e-8)).mean().item()
         precision = (tp / (tp + fp + 1e-8)).mean().item()
@@ -165,13 +166,13 @@ def compute_hd95(hard: torch.Tensor, labels: torch.Tensor, num_classes: int) -> 
 
 
 def evaluate_swinunetr(
-    model_path: Path,
-    dataset: MonaiDataset,
-    num_classes: int,
-    device: torch.device,
-    batch_size: int,
-    pred_dir: Optional[Path] = None,
-    max_cases: Optional[int] = None,
+        model_path: Path,
+        dataset: MonaiDataset,
+        num_classes: int,
+        device: torch.device,
+        batch_size: int,
+        pred_dir: Optional[Path] = None,
+        max_cases: Optional[int] = None,
 ) -> FoldResult:
     from monai.networks.nets import SwinUNETR
 
@@ -222,16 +223,16 @@ def _checkpoint_name_nnUNet(kind: str) -> str:
 
 
 def evaluate_nnunet(
-    model_root: Path,
-    metadata_root: Path,
-    repo_root: Path,
-    dataset_root: Path,
-    dataset_name: str,
-    fold: int,
-    max_cases: Optional[int],
-    checkpoint_kind: str,
-    device: torch.device,
-    output_dir: Path,
+        model_root: Path,
+        metadata_root: Path,
+        repo_root: Path,
+        dataset_root: Path,
+        dataset_name: str,
+        fold: int,
+        max_cases: Optional[int],
+        checkpoint_kind: str,
+        device: torch.device,
+        output_dir: Path,
 ) -> Optional[FoldResult]:
     from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
 
@@ -384,6 +385,7 @@ def evaluate_nnunet(
     agg["hd95"] = float(np.mean(hd_values))
     return FoldResult(metrics=agg, n_cases=n_cases)
 
+
 def save_predictions_as_artifact(run: wandb.sdk.wandb_run.Run, artifact_name: str, pred_dir: Path):
     artifact = wandb.Artifact(name=artifact_name, type="predictions")
     artifact.add_dir(str(pred_dir))
@@ -428,7 +430,8 @@ def main():
     parser.add_argument("--output-dir", default="evaluation/output")
     parser.add_argument("--max-cases", type=int, default=None, help="Limit number of validation cases per fold")
     parser.add_argument("--no-wandb", action="store_true")
-    parser.add_argument("--repo-root", type=str, default=".", help="Root of the local repository (for nnUNet metadata fallback)")
+    parser.add_argument("--repo-root", type=str, default="/content/hippopotamus",
+                        help="Root of the local repository (for nnUNet metadata fallback)")
     args = parser.parse_args()
 
     cfg = EvalConfig(
