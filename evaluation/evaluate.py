@@ -13,6 +13,21 @@ import nibabel as nib
 from monai.metrics import HausdorffDistanceMetric
 from monai.transforms import Compose, EnsureChannelFirstd, NormalizeIntensityd, EnsureTyped, DivisiblePadd
 from monai.data import Dataset as MonaiDataset, DataLoader
+import os
+import absl.logging
+import warnings
+
+
+# warning suppression for nnunet
+warnings.filterwarnings(
+    "ignore",
+    message=".*UnsupportedFieldAttributeWarning.*",
+)
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ["XLA_FLAGS"] = "--xla_gpu_cuda_data_dir=/usr/local/cuda"
+absl.logging.set_verbosity("error")
+absl.logging.set_stderrthreshold("error")
+os.environ["GLOG_minloglevel"] = "3"
 
 
 def seed_everything(seed: int = 0):
@@ -136,7 +151,7 @@ def compute_metrics_hard_soft(
         # soft dice
         soft_tp = (probs_fg * y_true_fg).sum(dim=(0, 2, 3, 4))
         soft_dice = (2 * soft_tp / (
-                    probs_fg.sum(dim=(0, 2, 3, 4)) + y_true_fg.sum(dim=(0, 2, 3, 4)) + 1e-8)).mean().item()
+                probs_fg.sum(dim=(0, 2, 3, 4)) + y_true_fg.sum(dim=(0, 2, 3, 4)) + 1e-8)).mean().item()
 
         recall = (tp / (tp + fn + 1e-8)).mean().item()
         precision = (tp / (tp + fp + 1e-8)).mean().item()
