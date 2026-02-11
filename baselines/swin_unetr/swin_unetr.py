@@ -320,6 +320,8 @@ def main():
         do_resize=args.resize,
     )
 
+    print(monai_dataset.data)
+
     case_names = [item["case_name"] for item in monai_dataset.data]
     if args.splits_json:
         all_splits = _load_splits_json(args.splits_json)
