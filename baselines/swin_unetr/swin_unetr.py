@@ -27,8 +27,8 @@ def _one_hot(labels, num_classes):
 
 
 def evaluate(model, val_loader, device, num_classes):
-    hard_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=True)
-    soft_metric = DiceMetric(include_background=True, reduction="mean", get_not_nans=True)
+    hard_metric = DiceMetric(include_background=False, reduction="mean", get_not_nans=True)
+    soft_metric = DiceMetric(include_background=False, reduction="mean", get_not_nans=True)
     model.eval()
     with torch.no_grad():
         for batch in val_loader:
