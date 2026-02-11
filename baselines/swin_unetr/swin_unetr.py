@@ -1,5 +1,5 @@
 from monai.utils import set_determinism
-from monai.transforms import Compose, EnsureChannelFirstd, NormalizeIntensityd, Resized, EnsureTyped, Lambdad, DivisiblePadd
+from monai.transforms import Compose, EnsureChannelFirstd, NormalizeIntensityd, Resized, EnsureTyped, Lambdad, DivisiblePadd, SpatialPadd, CenterSpatialCropd
 from monai.data import DataLoader, Dataset as MonaiDataset
 from monai.metrics import DiceMetric
 from monai.networks.nets import SwinUNETR
@@ -223,6 +223,10 @@ def _build_monai_dataset_from_pkl(df, dataset, num_classes, spatial_size=(64, 64
             2,
             Resized(keys=["image", "label"], spatial_size=spatial_size, mode=("trilinear", "nearest")),
         )
+    else:
+        # ensure fixed size for batching when resize is disabled
+        xforms.insert(2, SpatialPadd(keys=["image", "label"], spatial_size=spatial_size, mode=("constant", "constant")))
+        xforms.insert(3, CenterSpatialCropd(keys=["image", "label"], roi_size=spatial_size))
     transforms = Compose(xforms)
 
     return MonaiDataset(data=records, transform=transforms)
