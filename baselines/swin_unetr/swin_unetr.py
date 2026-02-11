@@ -10,7 +10,6 @@ import pandas as pd
 import argparse
 import re
 import json
-from sklearn.model_selection import GroupKFold
 import os
 
 
@@ -133,7 +132,7 @@ def _case_name_from_row(row, dataset):
     dataset = dataset.upper()
     if dataset == "MSD":
         subject_id = str(row["subject_id"])
-        return f"hippocampus_{subject_id}"
+        return f"{subject_id}"
     if dataset == "MNI":
         subject_id = str(row["subject_id"])
         direction = str(row["direction"])
@@ -229,24 +228,6 @@ def _build_monai_dataset_from_pkl(df, dataset, num_classes, spatial_size=(64, 64
     return MonaiDataset(data=records, transform=transforms)
 
 
-def _split_with_groupkfold(case_names, dataset, fold, n_splits=5):
-    case_names = sorted(case_names)
-    groups = [_patient_id_from_case(c, dataset) for c in case_names]
-    gkf = GroupKFold(n_splits=n_splits, shuffle=True, random_state=42)
-
-    case_array = np.array(case_names)
-    splits = []
-    for train_idx, val_idx in gkf.split(case_names, groups=groups):
-        splits.append({
-            "train": sorted(case_array[train_idx].tolist()),
-            "val": sorted(case_array[val_idx].tolist()),
-        })
-
-    if fold < 0 or fold >= len(splits):
-        raise ValueError(f"Fold must be in [0, {len(splits) - 1}]")
-    return splits, splits[fold]
-
-
 def _load_splits_json(path):
     with open(path, "r") as f:
         splits = json.load(f)
@@ -320,22 +301,13 @@ def main():
         do_resize=args.resize,
     )
 
-    print(monai_dataset.data)
-
     case_names = [item["case_name"] for item in monai_dataset.data]
-    if args.splits_json:
-        all_splits = _load_splits_json(args.splits_json)
-        if args.fold < 0 or args.fold >= len(all_splits):
-            raise ValueError(f"Fold must be in [0, {len(all_splits) - 1}]")
-        split = all_splits[args.fold]
-        print(json.dumps(all_splits, indent=4))
-    else:
-        all_splits, split = _split_with_groupkfold(case_names, args.dataset, args.fold)
-        print(json.dumps(all_splits, indent=4))
-        if args.splits_out:
-            with open(args.splits_out, "w") as f:
-                json.dump(all_splits, f, indent=4)
-            print(f"Saved splits to {args.splits_out}")
+
+    all_splits = _load_splits_json(args.splits_json)
+    if args.fold < 0 or args.fold >= len(all_splits):
+        raise ValueError(f"Fold must be in [0, {len(all_splits) - 1}]")
+    split = all_splits[args.fold]
+    print(json.dumps(all_splits, indent=4))
 
     train_set = set(split["train"])
     val_set = set(split["val"])
