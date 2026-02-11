@@ -1,6 +1,8 @@
 import argparse
 import json
 import os
+import sys
+import subprocess
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -423,6 +425,10 @@ def evaluate_unetrpp(
     output_dir: Path,
     max_cases: Optional[int],
 ) -> Optional[FoldResult]:
+    repo_root = Path(__file__).resolve().parents[1]
+    unetrpp_root = repo_root / "baselines" / "unetr_plus_plus"
+    if str(unetrpp_root) not in sys.path:
+        sys.path.insert(0, str(unetrpp_root))
     from unetr_pp.inference.predict import predict_cases
 
     images_dir = dataset_root / dataset_name / "imagesTr"
@@ -564,6 +570,7 @@ def main():
     parser.add_argument("--output-dir", default="evaluation/output")
     parser.add_argument("--max-cases", type=int, default=None, help="Limit number of validation cases per fold")
     parser.add_argument("--no-wandb", action="store_true")
+    parser.add_argument("--unetrpp-python", default=None, help="Path to UNETR++ venv python")
     parser.add_argument("--repo-root", type=str, default="/content/hippopotamus",
                         help="Root of the local repository (for nnUNet metadata fallback)")
     args = parser.parse_args()
@@ -676,16 +683,35 @@ def main():
                 elif method == "unetrpp":
                     pred_dir = cfg.output_dir / "predictions" / method / dataset_code / f"fold{fold}"
                     ensure_dir(pred_dir)
-                    fold_result = evaluate_unetrpp(
-                        model_root=model_path,
-                        dataset_root=dataset_root,
-                        dataset_name=dataset_artifact_name,
-                        fold=fold,
-                        checkpoint_kind=cfg.checkpoint,
-                        device=device,
-                        output_dir=pred_dir,
-                        max_cases=args.max_cases,
-                    )
+                    if args.unetrpp_python is None:
+                        print("Skipping unetrpp: --unetrpp-python not provided")
+                        continue
+                    helper = Path(__file__).resolve().parent / "evaluate_unetrpp.py"
+                    cmd = [
+                        args.unetrpp_python,
+                        str(helper),
+                        "--model-root",
+                        str(model_path),
+                        "--dataset-root",
+                        str(dataset_root),
+                        "--dataset-name",
+                        dataset_artifact_name,
+                        "--fold",
+                        str(fold),
+                        "--checkpoint",
+                        cfg.checkpoint,
+                        "--output-dir",
+                        str(pred_dir),
+                    ]
+                    if args.max_cases is not None:
+                        cmd += ["--max-cases", str(args.max_cases)]
+                    subprocess.check_call(cmd)
+                    metrics_file = pred_dir / "metrics.json"
+                    if not metrics_file.exists():
+                        print(f"Missing metrics.json from unetrpp helper in {pred_dir}")
+                        continue
+                    with open(metrics_file, "r") as f:
+                        fold_result = FoldResult(metrics=json.load(f), n_cases=0)
                     if fold_result is None:
                         continue
                 else:
