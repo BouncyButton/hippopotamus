@@ -85,6 +85,24 @@ def verify_no_group_leak(train_cases: Sequence[str], test_cases: Sequence[str], 
         raise RuntimeError(f"Group leakage between train and test split: {overlap[:10]}")
 
 
+def verify_cv_no_group_leak(cv_splits: Sequence[Dict[str, Sequence[str]]], dataset_code: str):
+    for i, split in enumerate(cv_splits):
+        train_groups = set(patient_id(c, dataset_code) for c in split["train"])
+        val_groups = set(patient_id(c, dataset_code) for c in split["val"])
+        overlap = sorted(train_groups.intersection(val_groups))
+        if overlap:
+            raise RuntimeError(f"Group leakage in CV fold {i} train/val: {overlap[:10]}")
+
+
+def verify_test_not_in_any_val(cv_splits: Sequence[Dict[str, Sequence[str]]], test_cases: Sequence[str], dataset_code: str):
+    test_groups = set(patient_id(c, dataset_code) for c in test_cases)
+    for i, split in enumerate(cv_splits):
+        val_groups = set(patient_id(c, dataset_code) for c in split["val"])
+        overlap = sorted(val_groups.intersection(test_groups))
+        if overlap:
+            raise RuntimeError(f"Test patient(s) found in CV val fold {i}: {overlap[:10]}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Generate deterministic train/test holdout plus 5-fold CV splits on the train pool only."
@@ -121,6 +139,8 @@ def main():
     train_cases, test_cases = create_holdout_split(all_cases, dataset_code, args.test_size, args.seed)
     verify_no_group_leak(train_cases, test_cases, dataset_code)
     cv_splits = create_cv_splits(train_cases, dataset_code, args.n_folds, args.seed)
+    verify_cv_no_group_leak(cv_splits, dataset_code)
+    verify_test_not_in_any_val(cv_splits, test_cases, dataset_code)
 
     holdout_payload = OrderedDict(train=train_cases, test=test_cases, seed=args.seed, test_size=args.test_size)
     cv_payload = cv_splits

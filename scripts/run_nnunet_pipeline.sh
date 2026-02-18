@@ -47,7 +47,7 @@ CONFIGURATION="3d_fullres"
 RUN_ROOT=""
 PROJECT="hippopotamus-project"
 ENTITY="hippopotamus"
-SKIP_DATASET_CREATE="0"
+SKIP_DATASET_CREATE="1"
 SKIP_TRAIN="0"
 SKIP_EVAL="0"
 MAX_CASES=""
@@ -83,7 +83,8 @@ fi
 
 if [[ -z "$RUN_ROOT" ]]; then
   TS="$(date +%Y%m%d_%H%M%S)"
-  RUN_ROOT="${REPO_ROOT}/runs/nnunet_${DATASET}_${MODE}_${TS}"
+  RUN_BASE="$(dirname "${REPO_ROOT}")/hippopotamus_runs"
+  RUN_ROOT="${RUN_BASE}/nnunet_${DATASET}_${MODE}_${TS}"
 fi
 
 DATASET_ID="$(echo "$DATASET" | sed -E 's/^Dataset([0-9]+)_.+$/\1/')"
@@ -91,6 +92,8 @@ DATASET_CODE="$(echo "$DATASET" | cut -d'_' -f2)"
 IFS=' ' read -r -a FOLDS <<< "$FOLDS_STR"
 
 FULL_DATASET_DIR="${REPO_ROOT}/datasets/${DATASET}"
+FULL_WORK_ROOT="${RUN_ROOT}/datasets_full"
+FULL_WORK_DATASET_DIR="${FULL_WORK_ROOT}/${DATASET}"
 RAW_ROOT="${RUN_ROOT}/datasets"
 PREPROC_ROOT="${RUN_ROOT}/preprocessed"
 RESULTS_ROOT="${RUN_ROOT}/results"
@@ -107,6 +110,8 @@ if ! command -v nnUNetv2_train >/dev/null 2>&1; then
   python3 -m pip install -e "${REPO_ROOT}/baselines/nnUNet"
 fi
 
+mkdir -p "${RUN_ROOT}" "${FULL_WORK_ROOT}" "${RAW_ROOT}" "${PREPROC_ROOT}" "${RESULTS_ROOT}" "${EVAL_OUTPUT_DIR}"
+
 if [[ "${SKIP_DATASET_CREATE}" != "1" ]]; then
   case "$DATASET" in
     Dataset101_MSD) CREATE_SCRIPT="${REPO_ROOT}/datasets/Dataset101_MSD/create_msd_dataset.py" ;;
@@ -115,13 +120,54 @@ if [[ "${SKIP_DATASET_CREATE}" != "1" ]]; then
     Dataset105_COBRA) CREATE_SCRIPT="${REPO_ROOT}/datasets/Dataset105_COBRA/create_cobra_dataset.py" ;;
     *) echo "[ERROR] Unsupported dataset: ${DATASET}"; exit 1 ;;
   esac
-  echo "[INFO] Creating/syncing dataset with ${CREATE_SCRIPT}"
-  (cd "${FULL_DATASET_DIR}" && python3 "${CREATE_SCRIPT}" --target "${DATASET}")
+  echo "[INFO] Creating/syncing dataset into ${FULL_WORK_DATASET_DIR} using ${CREATE_SCRIPT}"
+  (cd "${RUN_ROOT}" && python3 "${CREATE_SCRIPT}" --target "${FULL_WORK_DATASET_DIR}")
+fi
+
+resolve_dataset_dir() {
+  local base="$1"
+  local name="$2"
+  if [[ -d "${base}/imagesTr" && -d "${base}/labelsTr" ]]; then
+    echo "${base}"
+    return
+  fi
+  if [[ -d "${base}/${name}/imagesTr" && -d "${base}/${name}/labelsTr" ]]; then
+    echo "${base}/${name}"
+    return
+  fi
+  local found
+  found="$(find "${base}" -maxdepth 3 -type d -name imagesTr 2>/dev/null | head -n1 || true)"
+  if [[ -n "${found}" ]]; then
+    echo "$(dirname "${found}")"
+    return
+  fi
+  echo "${base}"
+}
+
+if [[ "${SKIP_DATASET_CREATE}" != "1" ]]; then
+  SOURCE_DATASET_DIR="${FULL_WORK_DATASET_DIR}"
+else
+  SOURCE_DATASET_DIR="${FULL_DATASET_DIR}"
+fi
+
+SOURCE_DATASET_DIR_RESOLVED="$(resolve_dataset_dir "${SOURCE_DATASET_DIR}" "${DATASET}")"
+echo "[INFO] source_dataset_dir_resolved=${SOURCE_DATASET_DIR_RESOLVED}"
+if [[ ! -d "${SOURCE_DATASET_DIR_RESOLVED}/imagesTr" || ! -d "${SOURCE_DATASET_DIR_RESOLVED}/labelsTr" ]]; then
+  echo "[ERROR] Could not find imagesTr/labelsTr under ${SOURCE_DATASET_DIR}"
+  exit 1
+fi
+
+# Copy full dataset outside repository so all subsequent writes happen in RUN_ROOT.
+if [[ "${SOURCE_DATASET_DIR_RESOLVED}" != "${FULL_WORK_DATASET_DIR}" ]]; then
+  echo "[INFO] Copying full dataset to writable working location: ${FULL_WORK_DATASET_DIR}"
+  rm -rf "${FULL_WORK_DATASET_DIR}"
+  mkdir -p "${FULL_WORK_DATASET_DIR}"
+  cp -a "${SOURCE_DATASET_DIR_RESOLVED}/." "${FULL_WORK_DATASET_DIR}/"
 fi
 
 echo "[INFO] Generating deterministic holdout + train-only CV splits"
 python3 "${REPO_ROOT}/datasets/generate_holdout_cv_splits.py" \
-  --dataset-dir "${FULL_DATASET_DIR}" \
+  --dataset-dir "${FULL_WORK_DATASET_DIR}" \
   --seed "${SEED}" \
   --test-size "${TEST_SIZE}" \
   --n-folds 5 \
@@ -130,13 +176,13 @@ python3 "${REPO_ROOT}/datasets/generate_holdout_cv_splits.py" \
 
 echo "[INFO] Building train-only dataset copy for preprocessing/training"
 mkdir -p "${TRAIN_DATASET_DIR}/imagesTr" "${TRAIN_DATASET_DIR}/labelsTr"
-cp "${FULL_DATASET_DIR}/dataset.json" "${TRAIN_DATASET_DIR}/dataset.json"
+cp "${FULL_WORK_DATASET_DIR}/dataset.json" "${TRAIN_DATASET_DIR}/dataset.json"
 python3 - <<PY
 import json
 import shutil
 from pathlib import Path
 
-full_dir = Path("${FULL_DATASET_DIR}")
+full_dir = Path("${FULL_WORK_DATASET_DIR}")
 train_dir = Path("${TRAIN_DATASET_DIR}")
 holdout = json.load(open(full_dir / "train_test_split.json"))
 train_cases = holdout["train"]
@@ -151,6 +197,10 @@ for case in train_cases:
 print(f"Copied {len(train_cases)} train cases to {train_dir}")
 PY
 
+# Keep split files in RUN_ROOT/datasets/<DATASET> so evaluate.py can resolve them via --repo-root RUN_ROOT.
+cp "${FULL_WORK_DATASET_DIR}/train_test_split.json" "${TRAIN_DATASET_DIR}/train_test_split.json"
+cp "${FULL_WORK_DATASET_DIR}/splits_final_train.json" "${TRAIN_DATASET_DIR}/splits_final_train.json"
+
 export nnUNet_raw="${RAW_ROOT}"
 export nnUNet_preprocessed="${PREPROC_ROOT}"
 export nnUNet_results="${RESULTS_ROOT}"
@@ -160,7 +210,7 @@ if [[ "${SKIP_TRAIN}" != "1" ]]; then
   nnUNetv2_plan_and_preprocess -d "${DATASET_ID}" --verify_dataset_integrity
 
   echo "[INFO] Replacing preprocessed splits with train-only 5-fold splits"
-  cp "${FULL_DATASET_DIR}/splits_final_train.json" "${PREPROC_ROOT}/${DATASET}/splits_final.json"
+  cp "${FULL_WORK_DATASET_DIR}/splits_final_train.json" "${PREPROC_ROOT}/${DATASET}/splits_final.json"
 
   for fold in "${FOLDS[@]}"; do
     echo "[INFO] Training fold ${fold} with ${TRAINER}"
@@ -186,7 +236,7 @@ fi
 
 if [[ "${SKIP_EVAL}" != "1" ]]; then
   # Evaluate uses holdout test cases and fold-ensemble inference for nnUNet.
-  export nnUNet_raw="${REPO_ROOT}/datasets"
+  export nnUNet_raw="${FULL_WORK_ROOT}"
   export nnUNet_preprocessed="${PREPROC_ROOT}"
   export nnUNet_results="${RESULTS_ROOT}"
   mkdir -p "${EVAL_OUTPUT_DIR}"
@@ -203,7 +253,7 @@ if [[ "${SKIP_EVAL}" != "1" ]]; then
     --eval-split test
     --cv-splits-name splits_final_train.json
     --holdout-split-name train_test_split.json
-    --repo-root "${REPO_ROOT}"
+    --repo-root "${RUN_ROOT}"
   )
   if [[ -n "${MAX_CASES}" ]]; then
     EVAL_CMD+=(--max-cases "${MAX_CASES}")
