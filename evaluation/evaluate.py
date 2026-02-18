@@ -63,6 +63,9 @@ class EvalConfig:
     use_wandb: bool
     batch_size: int
     repo_root: str
+    eval_split: str
+    cv_splits_name: str
+    holdout_split_name: str
 
 
 @dataclass
@@ -73,6 +76,35 @@ class FoldResult:
 
 def ensure_dir(path: Path):
     path.mkdir(parents=True, exist_ok=True)
+
+
+def _read_json(path: Path):
+    with open(path, "r") as f:
+        return json.load(f)
+
+
+def _resolve_cv_splits_path(metadata_root: Path, repo_root: Path, dataset_name: str, cv_splits_name: str) -> Path:
+    candidates = [
+        metadata_root / cv_splits_name,
+        repo_root / "datasets" / dataset_name / cv_splits_name,
+        metadata_root / "splits_final.json",
+        repo_root / "datasets" / dataset_name / "splits_final.json",
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    raise FileNotFoundError(f"Missing CV split file for {dataset_name}. Tried: {candidates}")
+
+
+def _resolve_holdout_split_path(repo_root: Path, dataset_name: str, holdout_split_name: str) -> Path:
+    candidates = [
+        repo_root / "datasets" / dataset_name / holdout_split_name,
+        Path("datasets") / dataset_name / holdout_split_name,
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    raise FileNotFoundError(f"Missing holdout split file for {dataset_name}. Tried: {candidates}")
 
 
 def download_artifact(api: wandb.Api, name: str, dst: Path) -> Path:
@@ -248,12 +280,15 @@ def _checkpoint_name_unetrpp(kind: str) -> str:
 
 
 def evaluate_nnunet(
-        model_root: Path,
+        model_roots: Dict[int, Path],
         metadata_root: Path,
         repo_root: Path,
         dataset_root: Path,
         dataset_name: str,
-        fold: int,
+        folds: List[int],
+        eval_split: str,
+        cv_splits_name: str,
+        holdout_split_name: str,
         max_cases: Optional[int],
         checkpoint_kind: str,
         device: torch.device,
@@ -263,19 +298,12 @@ def evaluate_nnunet(
 
     dataset_json = metadata_root / "dataset.json"
     plans_json = metadata_root / "nnUNetPlans.json"
-    splits_json = metadata_root / "splits_final.json"
-
-    if not splits_json.exists():
-        splits_json = repo_root / Path("datasets") / dataset_name / "splits_final.json"
-
     if not dataset_json.exists():
         dataset_json = repo_root / Path("datasets") / dataset_name / "dataset.json"
-
-    if not dataset_json.exists() or not plans_json.exists() or not splits_json.exists():
+    if not dataset_json.exists() or not plans_json.exists():
         print(f"Missing metadata files in {metadata_root}")
         print(f"Expected dataset.json at: {dataset_json}")
         print(f"Expected nnUNetPlans.json at: {plans_json}")
-        print(f"Expected splits_final.json at: {splits_json}")
         try:
             present = sorted([p.name for p in Path(metadata_root).iterdir()])
         except Exception:
@@ -287,40 +315,51 @@ def evaluate_nnunet(
         dataset_info = json.load(f)
     file_ending = dataset_info["file_ending"]
 
-    with open(splits_json, "r") as f:
-        splits = json.load(f)
-    if fold >= len(splits):
-        print(f"Fold {fold} not available in splits")
-        return None
-    val_cases = splits[fold]["val"]
+    if eval_split == "test":
+        holdout_split_path = _resolve_holdout_split_path(repo_root, dataset_name, holdout_split_name)
+        holdout = _read_json(holdout_split_path)
+        val_cases = holdout["test"]
+    else:
+        splits_json = _resolve_cv_splits_path(metadata_root, repo_root, dataset_name, cv_splits_name)
+        splits = _read_json(splits_json)
+        ref_fold = folds[0]
+        if ref_fold >= len(splits):
+            print(f"Fold {ref_fold} not available in splits")
+            return None
+        val_cases = splits[ref_fold]["val"]
+
     if max_cases is not None:
         val_cases = val_cases[:max_cases]
 
     # assemble model folder
-    model_dir = model_root / "nnunet_model"
-    fold_dir = model_dir / f"fold_{fold}"
+    model_dir = output_dir / "nnunet_model"
     if model_dir.exists():
         shutil.rmtree(model_dir)
-    fold_dir.mkdir(parents=True, exist_ok=True)
+    for fold in folds:
+        fold_root = model_roots.get(fold)
+        if fold_root is None:
+            print(f"Missing model root for fold {fold}")
+            return None
+        fold_dir = model_dir / f"fold_{fold}"
+        fold_dir.mkdir(parents=True, exist_ok=True)
+        for item in fold_root.iterdir():
+            if item.is_file():
+                shutil.copy(item, fold_dir / item.name)
 
-    # copy checkpoints into fold_dir
-    for item in model_root.iterdir():
-        if item.is_file():
-            shutil.copy(item, fold_dir / item.name)
+    ckpt_name = _checkpoint_name_nnUNet(checkpoint_kind)
+    for fold in folds:
+        if not (model_dir / f"fold_{fold}" / ckpt_name).exists():
+            print(f"Missing checkpoint {ckpt_name} in {model_dir / f'fold_{fold}'}")
+            return None
 
     # add required metadata files
     shutil.copy(plans_json, model_dir / "plans.json")
     shutil.copy(dataset_json, model_dir / "dataset.json")
 
-    ckpt_name = _checkpoint_name_nnUNet(checkpoint_kind)
-    if not (fold_dir / ckpt_name).exists():
-        print(f"Missing checkpoint {ckpt_name} in {fold_dir}")
-        return None
-
     predictor = nnUNetPredictor(device=device, verbose=False)
     predictor.initialize_from_trained_model_folder(
         str(model_dir),
-        use_folds=(fold,),
+        use_folds=tuple(folds),
         checkpoint_name=ckpt_name,
     )
 
@@ -362,6 +401,9 @@ def evaluate_nnunet(
     metrics_accum = []
     hd_values = []
     n_cases = 0
+    if len(val_cases) == 0:
+        print("No cases selected for evaluation")
+        return None
     num_classes = int(np.max(_load_nifti(labels_dir / f"{val_cases[0]}{file_ending}"))) + 1
 
     for case in val_cases:
@@ -461,6 +503,9 @@ def main():
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--output-dir", default="evaluation/output")
     parser.add_argument("--max-cases", type=int, default=None, help="Limit number of validation cases per fold")
+    parser.add_argument("--eval-split", choices=["val", "test"], default="test")
+    parser.add_argument("--cv-splits-name", default="splits_final_train.json")
+    parser.add_argument("--holdout-split-name", default="train_test_split.json")
     parser.add_argument("--no-wandb", action="store_true")
     parser.add_argument("--unetrpp-python", default=None, help="Path to UNETR++ venv python")
     parser.add_argument("--repo-root", type=str, default="/content/hippopotamus",
@@ -478,6 +523,9 @@ def main():
         use_wandb=not args.no_wandb,
         batch_size=args.batch_size,
         repo_root=args.repo_root,
+        eval_split=args.eval_split,
+        cv_splits_name=args.cv_splits_name,
+        holdout_split_name=args.holdout_split_name,
     )
 
     ensure_dir(cfg.output_dir)
@@ -520,11 +568,116 @@ def main():
                 print(f"Unknown method: {method}")
                 continue
 
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            repo_root = Path(cfg.repo_root)
+
+            if cfg.eval_split == "test" and method in {"nnunet", "unetrpp"}:
+                fold_model_paths: Dict[int, Path] = {}
+                for fold in cfg.folds:
+                    model_artifact = MODEL_ARTIFACTS[method].format(dataset=dataset_code, fold=fold)
+                    model_artifact_id = f"{cfg.entity}/{cfg.project}/{model_artifact}:latest"
+                    model_root = cfg.output_dir / "artifacts" / method / dataset_code / f"fold{fold}"
+                    if model_root.exists():
+                        shutil.rmtree(model_root)
+                    try:
+                        fold_model_paths[fold] = download_artifact(api, model_artifact_id, model_root)
+                    except Exception as e:
+                        print(f"Missing model artifact {model_artifact_id}: {e}")
+                        continue
+
+                available_folds = sorted(fold_model_paths.keys())
+                if not available_folds:
+                    continue
+
+                pred_dir = cfg.output_dir / "predictions" / method / dataset_code / "ensemble"
+                ensure_dir(pred_dir)
+
+                if method == "nnunet":
+                    if metadata_root is None:
+                        print(f"No metadata available for nnUNet {dataset_code}")
+                        continue
+                    fold_result = evaluate_nnunet(
+                        model_roots=fold_model_paths,
+                        metadata_root=Path(metadata_root),
+                        repo_root=repo_root,
+                        dataset_root=dataset_root,
+                        dataset_name=dataset_artifact_name,
+                        folds=available_folds,
+                        eval_split=cfg.eval_split,
+                        cv_splits_name=cfg.cv_splits_name,
+                        holdout_split_name=cfg.holdout_split_name,
+                        max_cases=args.max_cases,
+                        checkpoint_kind=cfg.checkpoint,
+                        device=device,
+                        output_dir=pred_dir,
+                    )
+                    if fold_result is None:
+                        continue
+                else:
+                    if args.unetrpp_python is None:
+                        print("Skipping unetrpp: --unetrpp-python not provided")
+                        continue
+                    helper = Path(__file__).resolve().parent / "evaluate_unetrpp.py"
+                    ensemble_model_root = cfg.output_dir / "artifacts" / method / dataset_code / "ensemble_model"
+                    if ensemble_model_root.exists():
+                        shutil.rmtree(ensemble_model_root)
+                    ensemble_model_root.mkdir(parents=True, exist_ok=True)
+                    copied_plans = False
+                    for fold in available_folds:
+                        src_root = fold_model_paths[fold]
+                        dst_fold = ensemble_model_root / f"fold_{fold}"
+                        dst_fold.mkdir(parents=True, exist_ok=True)
+                        for item in src_root.iterdir():
+                            if item.is_file():
+                                shutil.copy(item, dst_fold / item.name)
+                                if item.name.endswith(".pkl") and not copied_plans:
+                                    shutil.copy(item, ensemble_model_root / item.name)
+                                    copied_plans = True
+
+                    cmd = [
+                        args.unetrpp_python,
+                        str(helper),
+                        "--model-root",
+                        str(ensemble_model_root),
+                        "--dataset-root",
+                        str(dataset_root),
+                        "--dataset-name",
+                        dataset_artifact_name,
+                        "--folds",
+                        *[str(f) for f in available_folds],
+                        "--eval-split",
+                        cfg.eval_split,
+                        "--checkpoint",
+                        cfg.checkpoint,
+                        "--output-dir",
+                        str(pred_dir),
+                    ]
+                    holdout_path = repo_root / "datasets" / dataset_artifact_name / cfg.holdout_split_name
+                    if holdout_path.exists():
+                        cmd += ["--holdout-json", str(holdout_path)]
+                    if args.max_cases is not None:
+                        cmd += ["--max-cases", str(args.max_cases)]
+                    subprocess.check_call(cmd)
+                    metrics_file = pred_dir / "metrics.json"
+                    if not metrics_file.exists():
+                        print(f"Missing metrics.json from unetrpp helper in {pred_dir}")
+                        continue
+                    with open(metrics_file, "r") as f:
+                        fold_result = FoldResult(metrics=json.load(f), n_cases=0)
+
+                results[method][dataset_code].append(fold_result.metrics["dice_hard"])
+                if wandb_run is not None:
+                    wandb_run.log(
+                        {"dataset": dataset_code, "method": method, "fold": "ensemble", **fold_result.metrics}
+                    )
+                with open(pred_dir / "metrics.json", "w") as f:
+                    json.dump(fold_result.metrics, f, indent=2)
+                continue
+
             for fold in cfg.folds:
                 model_artifact = MODEL_ARTIFACTS[method].format(dataset=dataset_code, fold=fold)
                 model_artifact_id = f"{cfg.entity}/{cfg.project}/{model_artifact}:latest"
                 model_root = cfg.output_dir / "artifacts" / method / dataset_code / f"fold{fold}"
-                repo_root = cfg.repo_root
                 if model_root.exists():
                     shutil.rmtree(model_root)
 
@@ -533,8 +686,6 @@ def main():
                 except Exception as e:
                     print(f"Missing model artifact {model_artifact_id}: {e}")
                     continue
-
-                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
                 if method == "swinunetr":
                     ckpt_file = model_path / "model.pt"
@@ -559,12 +710,15 @@ def main():
                     pred_dir = cfg.output_dir / "predictions" / method / dataset_code / f"fold{fold}"
                     ensure_dir(pred_dir)
                     fold_result = evaluate_nnunet(
-                        model_root=model_path,
+                        model_roots={fold: model_path},
                         metadata_root=Path(metadata_root),
-                        repo_root=Path(repo_root),
+                        repo_root=repo_root,
                         dataset_root=dataset_root,
                         dataset_name=dataset_artifact_name,
-                        fold=fold,
+                        folds=[fold],
+                        eval_split=cfg.eval_split,
+                        cv_splits_name=cfg.cv_splits_name,
+                        holdout_split_name=cfg.holdout_split_name,
                         max_cases=args.max_cases,
                         checkpoint_kind=cfg.checkpoint,
                         device=device,
@@ -590,11 +744,19 @@ def main():
                         dataset_artifact_name,
                         "--fold",
                         str(fold),
+                        "--eval-split",
+                        cfg.eval_split,
                         "--checkpoint",
                         cfg.checkpoint,
                         "--output-dir",
                         str(pred_dir),
                     ]
+                    cv_splits_path = repo_root / "datasets" / dataset_artifact_name / cfg.cv_splits_name
+                    holdout_path = repo_root / "datasets" / dataset_artifact_name / cfg.holdout_split_name
+                    if cv_splits_path.exists():
+                        cmd += ["--splits-json", str(cv_splits_path)]
+                    if holdout_path.exists():
+                        cmd += ["--holdout-json", str(holdout_path)]
                     if args.max_cases is not None:
                         cmd += ["--max-cases", str(args.max_cases)]
                     subprocess.check_call(cmd)
@@ -604,8 +766,6 @@ def main():
                         continue
                     with open(metrics_file, "r") as f:
                         fold_result = FoldResult(metrics=json.load(f), n_cases=0)
-                    if fold_result is None:
-                        continue
                 else:
                     print(f"Method {method} evaluation not implemented in this script yet.")
                     continue

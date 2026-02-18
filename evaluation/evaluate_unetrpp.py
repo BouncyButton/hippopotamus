@@ -4,7 +4,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import List
 
 import numpy as np
 import torch
@@ -75,12 +75,79 @@ def _checkpoint_name(kind: str) -> str:
     return "model_final_checkpoint"
 
 
+def _read_json(path: Path):
+    with open(path, "r") as f:
+        return json.load(f)
+
+
+def _resolve_splits_json(dataset_root: Path, dataset_name: str, explicit: str) -> Path:
+    if explicit:
+        p = Path(explicit)
+        if p.exists():
+            return p
+    candidates = [
+        Path("datasets") / dataset_name / "splits_final_train.json",
+        dataset_root / dataset_name / "splits_final_train.json",
+        Path("datasets") / dataset_name / "splits_final.json",
+        dataset_root / dataset_name / "splits_final.json",
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    raise FileNotFoundError(f"Missing CV splits for {dataset_name}")
+
+
+def _resolve_holdout_json(dataset_root: Path, dataset_name: str, explicit: str) -> Path:
+    if explicit:
+        p = Path(explicit)
+        if p.exists():
+            return p
+    candidates = [
+        Path("datasets") / dataset_name / "train_test_split.json",
+        dataset_root / dataset_name / "train_test_split.json",
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    raise FileNotFoundError(f"Missing holdout split file for {dataset_name}")
+
+
+def _prepare_model_dir(model_root: Path, folds: List[int]) -> Path:
+    # If the folder already has fold subdirs, use it directly.
+    if all((model_root / f"fold_{f}").exists() for f in folds):
+        return model_root
+
+    # Backward-compatible path: a single-fold artifact with checkpoint files at root.
+    if len(folds) != 1:
+        raise RuntimeError(
+            "Model root does not contain fold_* subdirs; only single-fold mode is possible for this artifact."
+        )
+
+    model_dir = model_root / "unetrpp_model"
+    fold_dir = model_dir / f"fold_{folds[0]}"
+    if model_dir.exists():
+        shutil.rmtree(model_dir)
+    fold_dir.mkdir(parents=True, exist_ok=True)
+
+    for item in model_root.iterdir():
+        if item.is_file():
+            shutil.copy(item, fold_dir / item.name)
+    for item in model_root.iterdir():
+        if item.is_file() and item.name.endswith(".pkl"):
+            shutil.copy(item, model_dir / item.name)
+    return model_dir
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-root", required=True)
     parser.add_argument("--dataset-root", required=True)
     parser.add_argument("--dataset-name", required=True)
-    parser.add_argument("--fold", type=int, required=True)
+    parser.add_argument("--fold", type=int, default=None, help="Backward-compatible single fold.")
+    parser.add_argument("--folds", nargs="+", type=int, default=None, help="Model folds to ensemble.")
+    parser.add_argument("--eval-split", choices=["val", "test"], default="test")
+    parser.add_argument("--splits-json", default=None, help="CV split file; defaults to splits_final_train.json")
+    parser.add_argument("--holdout-json", default=None, help="Holdout split file; defaults to train_test_split.json")
     parser.add_argument("--checkpoint", default="final", choices=["latest", "best", "final"])
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--max-cases", type=int, default=None)
@@ -99,19 +166,24 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    splits_json = Path("datasets") / dataset_name / "splits_final.json"
-    if not splits_json.exists():
-        splits_json = dataset_root / dataset_name / "splits_final.json"
-    if not splits_json.exists():
-        raise FileNotFoundError(f"Missing splits_final.json for {dataset_name}")
+    folds = args.folds if args.folds is not None else ([] if args.fold is None else [args.fold])
+    if not folds:
+        folds = [0, 1, 2, 3, 4]
 
-    with open(splits_json, "r") as f:
-        splits = json.load(f)
-    if args.fold >= len(splits):
-        raise ValueError(f"Fold {args.fold} not available")
-    val_cases = splits[args.fold]["val"]
+    if args.eval_split == "test":
+        holdout_json = _resolve_holdout_json(dataset_root, dataset_name, args.holdout_json)
+        holdout = _read_json(holdout_json)
+        eval_cases = holdout["test"]
+    else:
+        splits_json = _resolve_splits_json(dataset_root, dataset_name, args.splits_json)
+        splits = _read_json(splits_json)
+        ref_fold = folds[0]
+        if ref_fold >= len(splits):
+            raise ValueError(f"Fold {ref_fold} not available")
+        eval_cases = splits[ref_fold]["val"]
+
     if args.max_cases is not None:
-        val_cases = val_cases[:args.max_cases]
+        eval_cases = eval_cases[:args.max_cases]
 
     # prefer nnUNet_raw if set
     nnunet_raw = os.environ.get("nnUNet_raw")
@@ -125,22 +197,11 @@ def main():
         images_dir = Path("datasets") / dataset_name / "imagesTr"
         labels_dir = Path("datasets") / dataset_name / "labelsTr"
 
-    model_dir = model_root / "unetrpp_model"
-    fold_dir = model_dir / f"fold_{args.fold}"
-    if model_dir.exists():
-        shutil.rmtree(model_dir)
-    fold_dir.mkdir(parents=True, exist_ok=True)
-
-    for item in model_root.iterdir():
-        if item.is_file():
-            shutil.copy(item, fold_dir / item.name)
-    for item in model_root.iterdir():
-        if item.is_file() and item.name.endswith(".pkl"):
-            shutil.copy(item, model_dir / item.name)
+    model_dir = _prepare_model_dir(model_root, folds)
 
     input_lists = []
     output_files = []
-    for case in val_cases:
+    for case in eval_cases:
         img = images_dir / f"{case}_0000.nii.gz"
         if not img.exists():
             continue
@@ -154,7 +215,7 @@ def main():
         str(model_dir),
         input_lists,
         output_files,
-        folds=(args.fold,),
+        folds=tuple(folds),
         save_npz=True,
         num_threads_preprocessing=2,
         num_threads_nifti_save=2,
@@ -169,7 +230,7 @@ def main():
     metrics_accum = []
     hd_values = []
     n_cases = 0
-    for case in val_cases:
+    for case in eval_cases:
         prob_file = output_dir / f"{case}.npz"
         label_file = labels_dir / f"{case}.nii.gz"
         if not prob_file.exists() or not label_file.exists():

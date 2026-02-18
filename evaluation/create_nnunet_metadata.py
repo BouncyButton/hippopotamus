@@ -20,6 +20,12 @@ def main():
         action="store_true",
         help="Run nnUNetv2_plan_and_preprocess before packaging metadata",
     )
+    parser.add_argument(
+        "--holdout-split-name",
+        type=str,
+        default="train_test_split.json",
+        help="If this holdout file exists for the dataset, preprocessing is blocked to avoid train/test leakage.",
+    )
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
@@ -32,6 +38,12 @@ def main():
     os.environ["nnUNet_results"] = str(results_dir)
 
     if args.run_preprocess:
+        holdout_split = datasets_dir / args.dataset_name / args.holdout_split_name
+        if holdout_split.exists():
+            raise RuntimeError(
+                f"Refusing to preprocess {args.dataset_name}: found holdout split {holdout_split}. "
+                "Create/use a train-only dataset folder for nnUNet preprocessing."
+            )
         # run preprocessing to generate plans and splits
         import subprocess
         subprocess.check_call([
