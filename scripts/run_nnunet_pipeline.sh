@@ -193,7 +193,25 @@ cp "${FULL_WORK_DATASET_DIR}/${HOLDOUT_FILE}" "${FULL_WORK_DATASET_DIR}/train_te
 
 echo "[INFO] Building train-only dataset copy for preprocessing/training"
 mkdir -p "${TRAIN_DATASET_DIR}/imagesTr" "${TRAIN_DATASET_DIR}/labelsTr"
-cp "${FULL_WORK_DATASET_DIR}/dataset.json" "${TRAIN_DATASET_DIR}/dataset.json"
+DATASET_JSON_CANDIDATES=(
+  "${FULL_WORK_DATASET_DIR}/dataset.json"
+  "${SOURCE_DATASET_DIR_RESOLVED}/dataset.json"
+  "${REPO_DATASET_DIR_RESOLVED}/dataset.json"
+  "${FULL_DATASET_DIR}/dataset.json"
+)
+DATASET_JSON_SRC=""
+for c in "${DATASET_JSON_CANDIDATES[@]}"; do
+  if [[ -f "${c}" ]]; then
+    DATASET_JSON_SRC="${c}"
+    break
+  fi
+done
+if [[ -z "${DATASET_JSON_SRC}" ]]; then
+  echo "[ERROR] dataset.json not found. Tried:"
+  for c in "${DATASET_JSON_CANDIDATES[@]}"; do echo "  - ${c}"; done
+  exit 1
+fi
+cp "${DATASET_JSON_SRC}" "${TRAIN_DATASET_DIR}/dataset.json"
 python3 - <<PY
 import json
 import shutil
