@@ -89,6 +89,8 @@ fi
 
 DATASET_ID="$(echo "$DATASET" | sed -E 's/^Dataset([0-9]+)_.+$/\1/')"
 DATASET_CODE="$(echo "$DATASET" | cut -d'_' -f2)"
+SPLITS_FILE="splits_final_${SEED}.json"
+HOLDOUT_FILE="train_test_split_${SEED}.json"
 IFS=' ' read -r -a FOLDS <<< "$FOLDS_STR"
 
 FULL_DATASET_DIR="${REPO_ROOT}/datasets/${DATASET}"
@@ -103,6 +105,7 @@ EVAL_OUTPUT_DIR="${RUN_ROOT}/evaluation_output"
 echo "[INFO] repo_root=${REPO_ROOT}"
 echo "[INFO] dataset=${DATASET} (id=${DATASET_ID}, code=${DATASET_CODE})"
 echo "[INFO] mode=${MODE}, trainer=${TRAINER}, folds=${FOLDS_STR}"
+echo "[INFO] split_files: cv=${SPLITS_FILE}, holdout=${HOLDOUT_FILE}"
 echo "[INFO] run_root=${RUN_ROOT}"
 
 if ! command -v nnUNetv2_train >/dev/null 2>&1; then
@@ -144,6 +147,7 @@ resolve_dataset_dir() {
   echo "${base}"
 }
 
+REPO_DATASET_DIR_RESOLVED="$(resolve_dataset_dir "${FULL_DATASET_DIR}" "${DATASET}")"
 if [[ "${SKIP_DATASET_CREATE}" != "1" ]]; then
   SOURCE_DATASET_DIR="${FULL_WORK_DATASET_DIR}"
 else
@@ -165,14 +169,27 @@ if [[ "${SOURCE_DATASET_DIR_RESOLVED}" != "${FULL_WORK_DATASET_DIR}" ]]; then
   cp -a "${SOURCE_DATASET_DIR_RESOLVED}/." "${FULL_WORK_DATASET_DIR}/"
 fi
 
-echo "[INFO] Generating deterministic holdout + train-only CV splits"
-python3 "${REPO_ROOT}/datasets/generate_holdout_cv_splits.py" \
-  --dataset-dir "${FULL_WORK_DATASET_DIR}" \
-  --seed "${SEED}" \
-  --test-size "${TEST_SIZE}" \
-  --n-folds 5 \
-  --holdout-output "train_test_split.json" \
-  --cv-output "splits_final_train.json"
+# Prefer existing seed-specific split files from repo dataset; otherwise generate.
+if [[ -f "${REPO_DATASET_DIR_RESOLVED}/${SPLITS_FILE}" && -f "${REPO_DATASET_DIR_RESOLVED}/${HOLDOUT_FILE}" ]]; then
+  echo "[INFO] Reusing existing seed-specific splits from repo dataset"
+  cp "${REPO_DATASET_DIR_RESOLVED}/${SPLITS_FILE}" "${FULL_WORK_DATASET_DIR}/${SPLITS_FILE}"
+  cp "${REPO_DATASET_DIR_RESOLVED}/${HOLDOUT_FILE}" "${FULL_WORK_DATASET_DIR}/${HOLDOUT_FILE}"
+elif [[ -f "${FULL_WORK_DATASET_DIR}/${SPLITS_FILE}" && -f "${FULL_WORK_DATASET_DIR}/${HOLDOUT_FILE}" ]]; then
+  echo "[INFO] Reusing existing seed-specific splits from working dataset"
+else
+  echo "[INFO] Generating deterministic holdout + train-only CV splits"
+  python3 "${REPO_ROOT}/datasets/generate_holdout_cv_splits.py" \
+    --dataset-dir "${FULL_WORK_DATASET_DIR}" \
+    --seed "${SEED}" \
+    --test-size "${TEST_SIZE}" \
+    --n-folds 5 \
+    --holdout-output "${HOLDOUT_FILE}" \
+    --cv-output "${SPLITS_FILE}"
+fi
+
+# Keep canonical compatibility filenames as aliases/copies.
+cp "${FULL_WORK_DATASET_DIR}/${SPLITS_FILE}" "${FULL_WORK_DATASET_DIR}/splits_final_train.json"
+cp "${FULL_WORK_DATASET_DIR}/${HOLDOUT_FILE}" "${FULL_WORK_DATASET_DIR}/train_test_split.json"
 
 echo "[INFO] Building train-only dataset copy for preprocessing/training"
 mkdir -p "${TRAIN_DATASET_DIR}/imagesTr" "${TRAIN_DATASET_DIR}/labelsTr"
@@ -200,6 +217,8 @@ PY
 # Keep split files in RUN_ROOT/datasets/<DATASET> so evaluate.py can resolve them via --repo-root RUN_ROOT.
 cp "${FULL_WORK_DATASET_DIR}/train_test_split.json" "${TRAIN_DATASET_DIR}/train_test_split.json"
 cp "${FULL_WORK_DATASET_DIR}/splits_final_train.json" "${TRAIN_DATASET_DIR}/splits_final_train.json"
+cp "${FULL_WORK_DATASET_DIR}/${HOLDOUT_FILE}" "${TRAIN_DATASET_DIR}/${HOLDOUT_FILE}"
+cp "${FULL_WORK_DATASET_DIR}/${SPLITS_FILE}" "${TRAIN_DATASET_DIR}/${SPLITS_FILE}"
 
 export nnUNet_raw="${RAW_ROOT}"
 export nnUNet_preprocessed="${PREPROC_ROOT}"
@@ -210,7 +229,7 @@ if [[ "${SKIP_TRAIN}" != "1" ]]; then
   nnUNetv2_plan_and_preprocess -d "${DATASET_ID}" --verify_dataset_integrity
 
   echo "[INFO] Replacing preprocessed splits with train-only 5-fold splits"
-  cp "${FULL_WORK_DATASET_DIR}/splits_final_train.json" "${PREPROC_ROOT}/${DATASET}/splits_final.json"
+  cp "${FULL_WORK_DATASET_DIR}/${SPLITS_FILE}" "${PREPROC_ROOT}/${DATASET}/splits_final.json"
 
   for fold in "${FOLDS[@]}"; do
     echo "[INFO] Training fold ${fold} with ${TRAINER}"
@@ -251,8 +270,8 @@ if [[ "${SKIP_EVAL}" != "1" ]]; then
     --checkpoint final
     --output-dir "${EVAL_OUTPUT_DIR}"
     --eval-split test
-    --cv-splits-name splits_final_train.json
-    --holdout-split-name train_test_split.json
+    --cv-splits-name "${SPLITS_FILE}"
+    --holdout-split-name "${HOLDOUT_FILE}"
     --repo-root "${RUN_ROOT}"
   )
   if [[ -n "${MAX_CASES}" ]]; then

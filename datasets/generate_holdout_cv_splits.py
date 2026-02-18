@@ -40,6 +40,28 @@ def load_cases_from_splits(path: Path) -> List[str]:
     return sorted(all_cases)
 
 
+def load_cases_from_dataset_files(dataset_dir: Path) -> List[str]:
+    labels_dir = dataset_dir / "labelsTr"
+    images_dir = dataset_dir / "imagesTr"
+    if not labels_dir.exists() and not images_dir.exists():
+        raise FileNotFoundError(f"Missing both labelsTr and imagesTr under {dataset_dir}")
+
+    cases = set()
+    if labels_dir.exists():
+        for p in labels_dir.glob("*.nii.gz"):
+            name = p.name
+            if name.endswith(".nii.gz"):
+                cases.add(name[:-7])
+    if images_dir.exists():
+        for p in images_dir.glob("*_0000.nii.gz"):
+            name = p.name
+            if name.endswith("_0000.nii.gz"):
+                cases.add(name[:-12])
+    if not cases:
+        raise RuntimeError(f"No cases found under {dataset_dir}/labelsTr or imagesTr")
+    return sorted(cases)
+
+
 def create_holdout_split(
     cases: Sequence[str],
     dataset_code: str,
@@ -111,7 +133,7 @@ def main():
     parser.add_argument(
         "--input-splits",
         default="splits_final.json",
-        help="Existing split file used only to collect all available case IDs.",
+        help="Existing split file used only to collect case IDs. If missing, cases are inferred from labelsTr/imagesTr.",
     )
     parser.add_argument("--dataset-code", default=None, help="Dataset code (MNI/ADNI/COBRA/MSD). Inferred if omitted.")
     parser.add_argument("--test-size", type=float, default=0.2, help="Holdout test proportion (group-aware).")
@@ -130,12 +152,12 @@ def main():
     args = parser.parse_args()
 
     dataset_dir = Path(args.dataset_dir)
-    input_splits = dataset_dir / args.input_splits
-    if not input_splits.exists():
-        raise FileNotFoundError(f"Missing input split file: {input_splits}")
-
     dataset_code = args.dataset_code.upper() if args.dataset_code else infer_dataset_code(dataset_dir.name)
-    all_cases = load_cases_from_splits(input_splits)
+    input_splits = dataset_dir / args.input_splits
+    if input_splits.exists():
+        all_cases = load_cases_from_splits(input_splits)
+    else:
+        all_cases = load_cases_from_dataset_files(dataset_dir)
     train_cases, test_cases = create_holdout_split(all_cases, dataset_code, args.test_size, args.seed)
     verify_no_group_leak(train_cases, test_cases, dataset_code)
     cv_splits = create_cv_splits(train_cases, dataset_code, args.n_folds, args.seed)
