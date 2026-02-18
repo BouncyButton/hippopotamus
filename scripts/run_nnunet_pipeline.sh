@@ -211,7 +211,6 @@ if [[ -z "${DATASET_JSON_SRC}" ]]; then
   for c in "${DATASET_JSON_CANDIDATES[@]}"; do echo "  - ${c}"; done
   exit 1
 fi
-cp "${DATASET_JSON_SRC}" "${TRAIN_DATASET_DIR}/dataset.json"
 python3 - <<PY
 import json
 import shutil
@@ -221,6 +220,24 @@ full_dir = Path("${FULL_WORK_DATASET_DIR}")
 train_dir = Path("${TRAIN_DATASET_DIR}")
 holdout = json.load(open(full_dir / "train_test_split.json"))
 train_cases = holdout["train"]
+dataset_json_src = Path("${DATASET_JSON_SRC}")
+
+dataset_json = json.load(open(dataset_json_src))
+dataset_json["numTraining"] = len(train_cases)
+if "training" in dataset_json and isinstance(dataset_json["training"], list):
+    allowed = set(train_cases)
+    filtered = []
+    for item in dataset_json["training"]:
+        if isinstance(item, dict):
+            image_path = str(item.get("image", ""))
+            label_path = str(item.get("label", ""))
+            case_id = Path(label_path).name.replace(".nii.gz", "")
+            if case_id in allowed or Path(image_path).name.replace("_0000.nii.gz", "") in allowed:
+                filtered.append(item)
+    if filtered:
+        dataset_json["training"] = filtered
+with open(train_dir / "dataset.json", "w") as f:
+    json.dump(dataset_json, f, indent=2)
 
 for case in train_cases:
     src_img = full_dir / "imagesTr" / f"{case}_0000.nii.gz"
@@ -230,6 +247,7 @@ for case in train_cases:
     shutil.copy(src_img, train_dir / "imagesTr" / src_img.name)
     shutil.copy(src_lbl, train_dir / "labelsTr" / src_lbl.name)
 print(f"Copied {len(train_cases)} train cases to {train_dir}")
+print(f"Wrote train-only dataset.json with numTraining={len(train_cases)}")
 PY
 
 # Keep split files in RUN_ROOT/datasets/<DATASET> so evaluate.py can resolve them via --repo-root RUN_ROOT.
