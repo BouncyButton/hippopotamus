@@ -115,14 +115,15 @@ fi
 
 mkdir -p "${RUN_ROOT}" "${FULL_WORK_ROOT}" "${RAW_ROOT}" "${PREPROC_ROOT}" "${RESULTS_ROOT}" "${EVAL_OUTPUT_DIR}"
 
+case "$DATASET" in
+  Dataset101_MSD) CREATE_SCRIPT="${REPO_ROOT}/datasets/Dataset101_MSD/create_msd_dataset.py" ;;
+  Dataset102_MNI) CREATE_SCRIPT="${REPO_ROOT}/datasets/Dataset102_MNI/create_mni_dataset.py" ;;
+  Dataset103_ADNI) CREATE_SCRIPT="${REPO_ROOT}/datasets/Dataset103_ADNI/create_adni_dataset.py" ;;
+  Dataset105_COBRA) CREATE_SCRIPT="${REPO_ROOT}/datasets/Dataset105_COBRA/create_cobra_dataset.py" ;;
+  *) echo "[ERROR] Unsupported dataset: ${DATASET}"; exit 1 ;;
+esac
+
 if [[ "${SKIP_DATASET_CREATE}" != "1" ]]; then
-  case "$DATASET" in
-    Dataset101_MSD) CREATE_SCRIPT="${REPO_ROOT}/datasets/Dataset101_MSD/create_msd_dataset.py" ;;
-    Dataset102_MNI) CREATE_SCRIPT="${REPO_ROOT}/datasets/Dataset102_MNI/create_mni_dataset.py" ;;
-    Dataset103_ADNI) CREATE_SCRIPT="${REPO_ROOT}/datasets/Dataset103_ADNI/create_adni_dataset.py" ;;
-    Dataset105_COBRA) CREATE_SCRIPT="${REPO_ROOT}/datasets/Dataset105_COBRA/create_cobra_dataset.py" ;;
-    *) echo "[ERROR] Unsupported dataset: ${DATASET}"; exit 1 ;;
-  esac
   echo "[INFO] Creating/syncing dataset into ${FULL_WORK_DATASET_DIR} using ${CREATE_SCRIPT}"
   (cd "${RUN_ROOT}" && python3 "${CREATE_SCRIPT}" --target "${FULL_WORK_DATASET_DIR}")
 fi
@@ -157,7 +158,16 @@ fi
 SOURCE_DATASET_DIR_RESOLVED="$(resolve_dataset_dir "${SOURCE_DATASET_DIR}" "${DATASET}")"
 echo "[INFO] source_dataset_dir_resolved=${SOURCE_DATASET_DIR_RESOLVED}"
 if [[ ! -d "${SOURCE_DATASET_DIR_RESOLVED}/imagesTr" || ! -d "${SOURCE_DATASET_DIR_RESOLVED}/labelsTr" ]]; then
-  echo "[ERROR] Could not find imagesTr/labelsTr under ${SOURCE_DATASET_DIR}"
+  if [[ "${SKIP_DATASET_CREATE}" == "1" ]]; then
+    echo "[WARN] Source dataset has no imagesTr/labelsTr. Auto-creating dataset in ${FULL_WORK_DATASET_DIR}"
+    (cd "${RUN_ROOT}" && python3 "${CREATE_SCRIPT}" --target "${FULL_WORK_DATASET_DIR}")
+    SOURCE_DATASET_DIR="${FULL_WORK_DATASET_DIR}"
+    SOURCE_DATASET_DIR_RESOLVED="$(resolve_dataset_dir "${SOURCE_DATASET_DIR}" "${DATASET}")"
+    echo "[INFO] source_dataset_dir_resolved(after create)=${SOURCE_DATASET_DIR_RESOLVED}"
+  fi
+fi
+if [[ ! -d "${SOURCE_DATASET_DIR_RESOLVED}/imagesTr" || ! -d "${SOURCE_DATASET_DIR_RESOLVED}/labelsTr" ]]; then
+  echo "[ERROR] Could not find imagesTr/labelsTr under ${SOURCE_DATASET_DIR_RESOLVED}"
   exit 1
 fi
 
