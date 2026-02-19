@@ -286,7 +286,8 @@ if [[ "${SKIP_TRAIN}" != "1" ]]; then
     python3 "${REPO_ROOT}/baselines/save_nnunet_run.py" \
       --model-path "${MODEL_PATH}" \
       --fold "${fold}" \
-      --dataset "${DATASET_CODE}"
+      --dataset "${DATASET_CODE}" \
+      --seed "${SEED}"
   done
 
   echo "[INFO] Packaging nnUNet metadata artifact"
@@ -319,6 +320,7 @@ if [[ "${SKIP_EVAL}" != "1" ]]; then
     --cv-splits-name "${SPLITS_FILE}"
     --holdout-split-name "${HOLDOUT_FILE}"
     --repo-root "${RUN_ROOT}"
+    --artifact-seed "${SEED}"
   )
   if [[ -n "${MAX_CASES}" ]]; then
     EVAL_CMD+=(--max-cases "${MAX_CASES}")

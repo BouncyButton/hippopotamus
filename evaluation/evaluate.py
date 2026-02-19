@@ -66,6 +66,7 @@ class EvalConfig:
     eval_split: str
     cv_splits_name: str
     holdout_split_name: str
+    artifact_seed: Optional[int]
 
 
 @dataclass
@@ -111,6 +112,14 @@ def download_artifact(api: wandb.Api, name: str, dst: Path) -> Path:
     artifact = api.artifact(name)
     ensure_dir(dst)
     return Path(artifact.download(root=str(dst)))
+
+
+def build_model_artifact_candidates(method: str, dataset: str, fold: int, artifact_seed: Optional[int]) -> List[str]:
+    base = MODEL_ARTIFACTS[method].format(dataset=dataset, fold=fold)
+    if method == "nnunet" and artifact_seed is not None:
+        seeded = f"nnunet-model-{dataset}-seed{artifact_seed}-fold{fold}"
+        return [seeded, base]
+    return [base]
 
 
 def load_dataset_from_artifact(dataset_code: str, dataset_root: Path) -> MonaiDataset:
@@ -506,6 +515,8 @@ def main():
     parser.add_argument("--eval-split", choices=["val", "test"], default="test")
     parser.add_argument("--cv-splits-name", default="splits_final_train.json")
     parser.add_argument("--holdout-split-name", default="train_test_split.json")
+    parser.add_argument("--artifact-seed", type=int, default=None,
+                        help="If set, nnUNet model artifacts are fetched as ...-seed<seed>-fold<k> (fallback to legacy).")
     parser.add_argument("--no-wandb", action="store_true")
     parser.add_argument("--unetrpp-python", default=None, help="Path to UNETR++ venv python")
     parser.add_argument("--repo-root", type=str, default="/content/hippopotamus",
@@ -526,6 +537,7 @@ def main():
         eval_split=args.eval_split,
         cv_splits_name=args.cv_splits_name,
         holdout_split_name=args.holdout_split_name,
+        artifact_seed=args.artifact_seed,
     )
 
     ensure_dir(cfg.output_dir)
@@ -574,15 +586,23 @@ def main():
             if cfg.eval_split == "test" and method in {"nnunet", "unetrpp"}:
                 fold_model_paths: Dict[int, Path] = {}
                 for fold in cfg.folds:
-                    model_artifact = MODEL_ARTIFACTS[method].format(dataset=dataset_code, fold=fold)
-                    model_artifact_id = f"{cfg.entity}/{cfg.project}/{model_artifact}:latest"
                     model_root = cfg.output_dir / "artifacts" / method / dataset_code / f"fold{fold}"
                     if model_root.exists():
                         shutil.rmtree(model_root)
-                    try:
-                        fold_model_paths[fold] = download_artifact(api, model_artifact_id, model_root)
-                    except Exception as e:
-                        print(f"Missing model artifact {model_artifact_id}: {e}")
+                    downloaded = False
+                    last_err = None
+                    for model_artifact in build_model_artifact_candidates(
+                            method, dataset_code, fold, cfg.artifact_seed):
+                        model_artifact_id = f"{cfg.entity}/{cfg.project}/{model_artifact}:latest"
+                        try:
+                            fold_model_paths[fold] = download_artifact(api, model_artifact_id, model_root)
+                            downloaded = True
+                            break
+                        except Exception as e:
+                            last_err = e
+                            continue
+                    if not downloaded:
+                        print(f"Missing model artifact for {method}/{dataset_code}/fold{fold}: {last_err}")
                         continue
 
                 available_folds = sorted(fold_model_paths.keys())
@@ -675,16 +695,23 @@ def main():
                 continue
 
             for fold in cfg.folds:
-                model_artifact = MODEL_ARTIFACTS[method].format(dataset=dataset_code, fold=fold)
-                model_artifact_id = f"{cfg.entity}/{cfg.project}/{model_artifact}:latest"
                 model_root = cfg.output_dir / "artifacts" / method / dataset_code / f"fold{fold}"
                 if model_root.exists():
                     shutil.rmtree(model_root)
 
-                try:
-                    model_path = download_artifact(api, model_artifact_id, model_root)
-                except Exception as e:
-                    print(f"Missing model artifact {model_artifact_id}: {e}")
+                model_path = None
+                last_err = None
+                for model_artifact in build_model_artifact_candidates(
+                        method, dataset_code, fold, cfg.artifact_seed):
+                    model_artifact_id = f"{cfg.entity}/{cfg.project}/{model_artifact}:latest"
+                    try:
+                        model_path = download_artifact(api, model_artifact_id, model_root)
+                        break
+                    except Exception as e:
+                        last_err = e
+                        continue
+                if model_path is None:
+                    print(f"Missing model artifact for {method}/{dataset_code}/fold{fold}: {last_err}")
                     continue
 
                 if method == "swinunetr":
