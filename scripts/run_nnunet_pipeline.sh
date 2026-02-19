@@ -229,7 +229,9 @@ from pathlib import Path
 full_dir = Path("${FULL_WORK_DATASET_DIR}")
 train_dir = Path("${TRAIN_DATASET_DIR}")
 holdout = json.load(open(full_dir / "train_test_split.json"))
-train_cases = holdout["train"]
+train_cases = [c for c in holdout["train"] if not str(c).startswith("._")]
+if len(train_cases) != len(holdout["train"]):
+    print(f"Filtered {len(holdout['train']) - len(train_cases)} macOS resource-fork entries from train split.")
 dataset_json_src = Path("${DATASET_JSON_SRC}")
 
 dataset_json = json.load(open(dataset_json_src))

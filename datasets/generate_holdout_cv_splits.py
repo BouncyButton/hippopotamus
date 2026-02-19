@@ -37,7 +37,7 @@ def load_cases_from_splits(path: Path) -> List[str]:
     for fold in splits:
         all_cases.update(fold["train"])
         all_cases.update(fold["val"])
-    return sorted(all_cases)
+    return sorted(c for c in all_cases if not str(c).startswith("._"))
 
 
 def load_cases_from_dataset_files(dataset_dir: Path) -> List[str]:
@@ -50,11 +50,15 @@ def load_cases_from_dataset_files(dataset_dir: Path) -> List[str]:
     if labels_dir.exists():
         for p in labels_dir.glob("*.nii.gz"):
             name = p.name
+            if name.startswith("._"):
+                continue
             if name.endswith(".nii.gz"):
                 cases.add(name[:-7])
     if images_dir.exists():
         for p in images_dir.glob("*_0000.nii.gz"):
             name = p.name
+            if name.startswith("._"):
+                continue
             if name.endswith("_0000.nii.gz"):
                 cases.add(name[:-12])
     if not cases:
