@@ -321,6 +321,8 @@ if [[ "${SKIP_EVAL}" != "1" ]]; then
     --holdout-split-name "${HOLDOUT_FILE}"
     --repo-root "${RUN_ROOT}"
     --artifact-seed "${SEED}"
+    --nnunet-npp 1
+    --nnunet-nps 1
   )
   if [[ -n "${MAX_CASES}" ]]; then
     EVAL_CMD+=(--max-cases "${MAX_CASES}")

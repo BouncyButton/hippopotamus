@@ -67,6 +67,8 @@ class EvalConfig:
     cv_splits_name: str
     holdout_split_name: str
     artifact_seed: Optional[int]
+    nnunet_npp: int
+    nnunet_nps: int
 
 
 @dataclass
@@ -302,6 +304,8 @@ def evaluate_nnunet(
         checkpoint_kind: str,
         device: torch.device,
         output_dir: Path,
+        num_processes_preprocessing: int,
+        num_processes_segmentation_export: int,
 ) -> Optional[FoldResult]:
     from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
 
@@ -405,6 +409,8 @@ def evaluate_nnunet(
         str(pred_dir),
         save_probabilities=True,
         overwrite=True,
+        num_processes_preprocessing=num_processes_preprocessing,
+        num_processes_segmentation_export=num_processes_segmentation_export,
     )
 
     metrics_accum = []
@@ -517,6 +523,8 @@ def main():
     parser.add_argument("--holdout-split-name", default="train_test_split.json")
     parser.add_argument("--artifact-seed", type=int, default=None,
                         help="If set, nnUNet model artifacts are fetched as ...-seed<seed>-fold<k> (fallback to legacy).")
+    parser.add_argument("--nnunet-npp", type=int, default=1, help="nnUNet num_processes_preprocessing for inference.")
+    parser.add_argument("--nnunet-nps", type=int, default=1, help="nnUNet num_processes_segmentation_export.")
     parser.add_argument("--no-wandb", action="store_true")
     parser.add_argument("--unetrpp-python", default=None, help="Path to UNETR++ venv python")
     parser.add_argument("--repo-root", type=str, default="/content/hippopotamus",
@@ -538,6 +546,8 @@ def main():
         cv_splits_name=args.cv_splits_name,
         holdout_split_name=args.holdout_split_name,
         artifact_seed=args.artifact_seed,
+        nnunet_npp=args.nnunet_npp,
+        nnunet_nps=args.nnunet_nps,
     )
 
     ensure_dir(cfg.output_dir)
@@ -630,6 +640,8 @@ def main():
                         checkpoint_kind=cfg.checkpoint,
                         device=device,
                         output_dir=pred_dir,
+                        num_processes_preprocessing=cfg.nnunet_npp,
+                        num_processes_segmentation_export=cfg.nnunet_nps,
                     )
                     if fold_result is None:
                         continue
@@ -750,6 +762,8 @@ def main():
                         checkpoint_kind=cfg.checkpoint,
                         device=device,
                         output_dir=pred_dir,
+                        num_processes_preprocessing=cfg.nnunet_npp,
+                        num_processes_segmentation_export=cfg.nnunet_nps,
                     )
                     if fold_result is None:
                         continue
