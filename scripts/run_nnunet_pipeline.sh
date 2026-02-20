@@ -23,6 +23,7 @@ Options:
   --seed 42                         Random seed for deterministic splitting
   --outer_fold_idx 0                Nested mode: outer fold index to materialize (0..4)
   --split-scheme nested|holdout     Split strategy (default: nested)
+  --inner-n-folds 5                 Nested mode: number of inner folds
   --inner-seed 42                   Nested mode: seed for inner-fold ordering
   --config 3d_fullres               nnUNet configuration
   --run-root PATH                   Working root for nnUNet raw/preprocessed/results
@@ -48,6 +49,7 @@ TEST_SIZE="0.2"
 SEED="42"
 OUTER_FOLD_IDX="0"
 SPLIT_SCHEME="nested"
+INNER_N_FOLDS="5"
 INNER_SEED="42"
 CONFIGURATION="3d_fullres"
 RUN_ROOT=""
@@ -68,6 +70,7 @@ while [[ $# -gt 0 ]]; do
     --seed) SEED="$2"; shift 2 ;;
     --outer_fold_idx) OUTER_FOLD_IDX="$2"; shift 2 ;;
     --split-scheme) SPLIT_SCHEME="$2"; shift 2 ;;
+    --inner-n-folds) INNER_N_FOLDS="$2"; shift 2 ;;
     --inner-seed) INNER_SEED="$2"; shift 2 ;;
     --config) CONFIGURATION="$2"; shift 2 ;;
     --run-root) RUN_ROOT="$2"; shift 2 ;;
@@ -119,7 +122,7 @@ EVAL_OUTPUT_DIR="${RUN_ROOT}/evaluation_output"
 echo "[INFO] repo_root=${REPO_ROOT}"
 echo "[INFO] dataset=${DATASET} (id=${DATASET_ID}, code=${DATASET_CODE})"
 echo "[INFO] mode=${MODE}, trainer=${TRAINER}, folds=${FOLDS_STR}"
-echo "[INFO] split_scheme=${SPLIT_SCHEME}, seed=${SEED}, outer_fold_idx=${OUTER_FOLD_IDX}, inner_seed=${INNER_SEED}"
+echo "[INFO] split_scheme=${SPLIT_SCHEME}, seed=${SEED}, outer_fold_idx=${OUTER_FOLD_IDX}, inner_n_folds=${INNER_N_FOLDS}, inner_seed=${INNER_SEED}"
 echo "[INFO] split_files: cv=${SPLITS_FILE}, holdout=${HOLDOUT_FILE}"
 echo "[INFO] run_root=${RUN_ROOT}"
 
@@ -216,7 +219,7 @@ if [[ "${SPLIT_SCHEME}" == "nested" ]]; then
     --split-scheme nested \
     --outer-fold "${OUTER_FOLD_IDX}" \
     --outer-n-folds 5 \
-    --n-folds 5 \
+    --n-folds "${INNER_N_FOLDS}" \
     --seed "${SEED}" \
     --inner-seed "${INNER_SEED}" \
     --holdout-output "${HOLDOUT_FILE}" \
