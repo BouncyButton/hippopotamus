@@ -148,6 +148,13 @@ resolve_dataset_dir() {
   echo "${base}"
 }
 
+cleanup_macos_resource_forks() {
+  local root="$1"
+  if [[ -d "${root}" ]]; then
+    find "${root}" -type f -name '._*' -delete || true
+  fi
+}
+
 REPO_DATASET_DIR_RESOLVED="$(resolve_dataset_dir "${FULL_DATASET_DIR}" "${DATASET}")"
 if [[ "${SKIP_DATASET_CREATE}" != "1" ]]; then
   SOURCE_DATASET_DIR="${FULL_WORK_DATASET_DIR}"
@@ -179,6 +186,9 @@ if [[ "${SOURCE_DATASET_DIR_RESOLVED}" != "${FULL_WORK_DATASET_DIR}" ]]; then
   cp -a "${SOURCE_DATASET_DIR_RESOLVED}/." "${FULL_WORK_DATASET_DIR}/"
 fi
 
+echo "[INFO] Cleaning macOS resource-fork files under ${FULL_WORK_DATASET_DIR}"
+cleanup_macos_resource_forks "${FULL_WORK_DATASET_DIR}"
+
 # Prefer existing seed-specific split files from repo dataset; otherwise generate.
 if [[ -f "${REPO_DATASET_DIR_RESOLVED}/${SPLITS_FILE}" && -f "${REPO_DATASET_DIR_RESOLVED}/${HOLDOUT_FILE}" ]]; then
   echo "[INFO] Reusing existing seed-specific splits from repo dataset"
@@ -202,6 +212,7 @@ cp "${FULL_WORK_DATASET_DIR}/${SPLITS_FILE}" "${FULL_WORK_DATASET_DIR}/splits_fi
 cp "${FULL_WORK_DATASET_DIR}/${HOLDOUT_FILE}" "${FULL_WORK_DATASET_DIR}/train_test_split.json"
 
 echo "[INFO] Building train-only dataset copy for preprocessing/training"
+rm -rf "${TRAIN_DATASET_DIR}"
 mkdir -p "${TRAIN_DATASET_DIR}/imagesTr" "${TRAIN_DATASET_DIR}/labelsTr"
 DATASET_JSON_CANDIDATES=(
   "${FULL_WORK_DATASET_DIR}/dataset.json"
@@ -273,6 +284,7 @@ export nnUNet_preprocessed="${PREPROC_ROOT}"
 export nnUNet_results="${RESULTS_ROOT}"
 
 if [[ "${SKIP_TRAIN}" != "1" ]]; then
+  rm -rf "${PREPROC_ROOT:?}/${DATASET}"
   echo "[INFO] Running nnUNet plan + preprocess (train-only dataset)"
   nnUNetv2_plan_and_preprocess -d "${DATASET_ID}" --verify_dataset_integrity
 
