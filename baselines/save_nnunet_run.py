@@ -8,10 +8,15 @@ parser.add_argument('--model-path', type=str, required=True, help='Path to the n
 parser.add_argument('--fold', type=int, required=True, help='Fold number of the nnU-Net model')
 parser.add_argument('--dataset', type=str, required=True, help='Dataset name the model was trained on')
 parser.add_argument('--seed', type=int, default=None, help='Optional split seed to include in artifact name')
+parser.add_argument('--outer-fold-idx', type=int, default=None, help='Optional outer fold index for nested CV naming')
 args = parser.parse_args()
 
 artifact_name = f"nnunet-model-{args.dataset}-fold{args.fold}"
-if args.seed is not None:
+if args.outer_fold_idx is not None and args.seed is not None:
+    artifact_name = f"nnunet-model-{args.dataset}-outer{args.outer_fold_idx}-seed{args.seed}-fold{args.fold}"
+elif args.outer_fold_idx is not None:
+    artifact_name = f"nnunet-model-{args.dataset}-outer{args.outer_fold_idx}-fold{args.fold}"
+elif args.seed is not None:
     artifact_name = f"nnunet-model-{args.dataset}-seed{args.seed}-fold{args.fold}"
 
 artifact = wandb.Artifact(

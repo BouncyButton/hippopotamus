@@ -67,6 +67,7 @@ class EvalConfig:
     cv_splits_name: str
     holdout_split_name: str
     artifact_seed: Optional[int]
+    artifact_outer_fold_idx: Optional[int]
     nnunet_npp: int
     nnunet_nps: int
 
@@ -116,11 +117,24 @@ def download_artifact(api: wandb.Api, name: str, dst: Path) -> Path:
     return Path(artifact.download(root=str(dst)))
 
 
-def build_model_artifact_candidates(method: str, dataset: str, fold: int, artifact_seed: Optional[int]) -> List[str]:
+def build_model_artifact_candidates(
+        method: str,
+        dataset: str,
+        fold: int,
+        artifact_seed: Optional[int],
+        artifact_outer_fold_idx: Optional[int],
+) -> List[str]:
     base = MODEL_ARTIFACTS[method].format(dataset=dataset, fold=fold)
-    if method == "nnunet" and artifact_seed is not None:
-        seeded = f"nnunet-model-{dataset}-seed{artifact_seed}-fold{fold}"
-        return [seeded, base]
+    if method == "nnunet":
+        candidates = []
+        if artifact_outer_fold_idx is not None and artifact_seed is not None:
+            candidates.append(f"nnunet-model-{dataset}-outer{artifact_outer_fold_idx}-seed{artifact_seed}-fold{fold}")
+        if artifact_outer_fold_idx is not None:
+            candidates.append(f"nnunet-model-{dataset}-outer{artifact_outer_fold_idx}-fold{fold}")
+        if artifact_seed is not None:
+            candidates.append(f"nnunet-model-{dataset}-seed{artifact_seed}-fold{fold}")
+        candidates.append(base)
+        return candidates
     return [base]
 
 
@@ -523,6 +537,8 @@ def main():
     parser.add_argument("--holdout-split-name", default="train_test_split.json")
     parser.add_argument("--artifact-seed", type=int, default=None,
                         help="If set, nnUNet model artifacts are fetched as ...-seed<seed>-fold<k> (fallback to legacy).")
+    parser.add_argument("--artifact-outer-fold-idx", type=int, default=None,
+                        help="Optional nested-CV outer fold index in artifact names.")
     parser.add_argument("--nnunet-npp", type=int, default=1, help="nnUNet num_processes_preprocessing for inference.")
     parser.add_argument("--nnunet-nps", type=int, default=1, help="nnUNet num_processes_segmentation_export.")
     parser.add_argument("--no-wandb", action="store_true")
@@ -546,6 +562,7 @@ def main():
         cv_splits_name=args.cv_splits_name,
         holdout_split_name=args.holdout_split_name,
         artifact_seed=args.artifact_seed,
+        artifact_outer_fold_idx=args.artifact_outer_fold_idx,
         nnunet_npp=args.nnunet_npp,
         nnunet_nps=args.nnunet_nps,
     )
@@ -602,7 +619,7 @@ def main():
                     downloaded = False
                     last_err = None
                     for model_artifact in build_model_artifact_candidates(
-                            method, dataset_code, fold, cfg.artifact_seed):
+                            method, dataset_code, fold, cfg.artifact_seed, cfg.artifact_outer_fold_idx):
                         model_artifact_id = f"{cfg.entity}/{cfg.project}/{model_artifact}:latest"
                         try:
                             fold_model_paths[fold] = download_artifact(api, model_artifact_id, model_root)
@@ -714,7 +731,7 @@ def main():
                 model_path = None
                 last_err = None
                 for model_artifact in build_model_artifact_candidates(
-                        method, dataset_code, fold, cfg.artifact_seed):
+                        method, dataset_code, fold, cfg.artifact_seed, cfg.artifact_outer_fold_idx):
                     model_artifact_id = f"{cfg.entity}/{cfg.project}/{model_artifact}:latest"
                     try:
                         model_path = download_artifact(api, model_artifact_id, model_root)

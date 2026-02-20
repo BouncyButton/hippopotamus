@@ -103,6 +103,28 @@ def create_cv_splits(train_cases: Sequence[str], dataset_code: str, n_splits: in
     return splits
 
 
+def create_group_kfold_splits(cases: Sequence[str], dataset_code: str, n_splits: int, seed: int) -> List[Dict[str, List[str]]]:
+    case_array = np.array(sorted(cases))
+    groups = np.array([patient_id(c, dataset_code) for c in case_array])
+
+    # Deterministic shuffle before GroupKFold to vary partitioning while preserving grouping.
+    rng = np.random.RandomState(seed)
+    perm = rng.permutation(len(case_array))
+    case_array = case_array[perm]
+    groups = groups[perm]
+
+    gkf = GroupKFold(n_splits=n_splits)
+    splits = []
+    for train_idx, val_idx in gkf.split(case_array, groups=groups):
+        splits.append(
+            OrderedDict(
+                train=sorted(case_array[train_idx].tolist()),
+                val=sorted(case_array[val_idx].tolist()),
+            )
+        )
+    return splits
+
+
 def verify_no_group_leak(train_cases: Sequence[str], test_cases: Sequence[str], dataset_code: str):
     train_groups = set(patient_id(c, dataset_code) for c in train_cases)
     test_groups = set(patient_id(c, dataset_code) for c in test_cases)
@@ -140,9 +162,17 @@ def main():
         help="Existing split file used only to collect case IDs. If missing, cases are inferred from labelsTr/imagesTr.",
     )
     parser.add_argument("--dataset-code", default=None, help="Dataset code (MNI/ADNI/COBRA/MSD). Inferred if omitted.")
+    parser.add_argument("--split-scheme", choices=["holdout", "nested"], default="nested",
+                        help="Split strategy. nested => outer KFold test split + inner KFold CV on outer-train.")
     parser.add_argument("--test-size", type=float, default=0.2, help="Holdout test proportion (group-aware).")
     parser.add_argument("--n-folds", type=int, default=5, help="Number of CV folds on the train pool.")
     parser.add_argument("--seed", type=int, default=42, help="Deterministic split seed.")
+    parser.add_argument("--outer-fold", type=int, default=None,
+                        help="Nested mode: selected outer fold index to materialize as train/test.")
+    parser.add_argument("--outer-n-folds", type=int, default=5,
+                        help="Nested mode: number of outer folds.")
+    parser.add_argument("--inner-seed", type=int, default=42,
+                        help="Nested mode: seed for inner GroupKFold split ordering.")
     parser.add_argument(
         "--holdout-output",
         default="train_test_split.json",
@@ -162,13 +192,32 @@ def main():
         all_cases = load_cases_from_splits(input_splits)
     else:
         all_cases = load_cases_from_dataset_files(dataset_dir)
-    train_cases, test_cases = create_holdout_split(all_cases, dataset_code, args.test_size, args.seed)
+    if args.split_scheme == "nested":
+        if args.outer_fold is None:
+            raise ValueError("--outer-fold is required when --split-scheme nested")
+        outer_splits = create_group_kfold_splits(all_cases, dataset_code, args.outer_n_folds, args.seed)
+        if args.outer_fold < 0 or args.outer_fold >= len(outer_splits):
+            raise ValueError(f"outer_fold={args.outer_fold} out of range [0, {len(outer_splits)-1}]")
+        selected_outer = outer_splits[args.outer_fold]
+        train_cases = selected_outer["train"]
+        test_cases = selected_outer["val"]
+        cv_splits = create_group_kfold_splits(train_cases, dataset_code, args.n_folds, args.inner_seed)
+    else:
+        train_cases, test_cases = create_holdout_split(all_cases, dataset_code, args.test_size, args.seed)
+        cv_splits = create_cv_splits(train_cases, dataset_code, args.n_folds, args.seed)
+
     verify_no_group_leak(train_cases, test_cases, dataset_code)
-    cv_splits = create_cv_splits(train_cases, dataset_code, args.n_folds, args.seed)
     verify_cv_no_group_leak(cv_splits, dataset_code)
     verify_test_not_in_any_val(cv_splits, test_cases, dataset_code)
 
-    holdout_payload = OrderedDict(train=train_cases, test=test_cases, seed=args.seed, test_size=args.test_size)
+    holdout_payload = OrderedDict(
+        train=train_cases,
+        test=test_cases,
+        seed=args.seed,
+        split_scheme=args.split_scheme,
+        outer_fold=args.outer_fold,
+        test_size=args.test_size,
+    )
     cv_payload = cv_splits
 
     holdout_output = dataset_dir / args.holdout_output

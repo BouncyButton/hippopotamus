@@ -3,7 +3,7 @@ set -euo pipefail
 
 # End-to-end nnUNet pipeline (updated split strategy):
 # 1) ensure dataset exists locally
-# 2) create deterministic holdout + train-only 5-fold CV splits
+# 2) create deterministic splits (nested CV by default)
 # 3) build a train-only nnUNet raw dataset copy (prevents train/test preprocessing leakage)
 # 4) preprocess + train folds
 # 5) upload fold models + metadata artifacts to W&B
@@ -19,8 +19,11 @@ Options:
   --mode sanity|full                sanity => nnUNetTrainer_1epoch, full => nnUNetTrainer_250epochs
   --trainer NAME                    Override trainer class
   --folds "0 1 2 3 4"               Space-separated fold list
-  --test-size 0.2                   Holdout test proportion
-  --seed 42                         Fixed random seed for deterministic splits
+  --test-size 0.2                   Holdout-only: test proportion
+  --seed 42                         Random seed for deterministic splitting
+  --outer_fold_idx 0                Nested mode: outer fold index to materialize (0..4)
+  --split-scheme nested|holdout     Split strategy (default: nested)
+  --inner-seed 42                   Nested mode: seed for inner-fold ordering
   --config 3d_fullres               nnUNet configuration
   --run-root PATH                   Working root for nnUNet raw/preprocessed/results
   --project NAME                    W&B project
@@ -43,6 +46,9 @@ TRAINER=""
 FOLDS_STR="0"
 TEST_SIZE="0.2"
 SEED="42"
+OUTER_FOLD_IDX="0"
+SPLIT_SCHEME="nested"
+INNER_SEED="42"
 CONFIGURATION="3d_fullres"
 RUN_ROOT=""
 PROJECT="hippopotamus-project"
@@ -60,6 +66,9 @@ while [[ $# -gt 0 ]]; do
     --folds) FOLDS_STR="$2"; shift 2 ;;
     --test-size) TEST_SIZE="$2"; shift 2 ;;
     --seed) SEED="$2"; shift 2 ;;
+    --outer_fold_idx) OUTER_FOLD_IDX="$2"; shift 2 ;;
+    --split-scheme) SPLIT_SCHEME="$2"; shift 2 ;;
+    --inner-seed) INNER_SEED="$2"; shift 2 ;;
     --config) CONFIGURATION="$2"; shift 2 ;;
     --run-root) RUN_ROOT="$2"; shift 2 ;;
     --project) PROJECT="$2"; shift 2 ;;
@@ -89,8 +98,13 @@ fi
 
 DATASET_ID="$(echo "$DATASET" | sed -E 's/^Dataset([0-9]+)_.+$/\1/')"
 DATASET_CODE="$(echo "$DATASET" | cut -d'_' -f2)"
-SPLITS_FILE="splits_final_${SEED}.json"
-HOLDOUT_FILE="train_test_split_${SEED}.json"
+if [[ "${SPLIT_SCHEME}" == "nested" ]]; then
+  SPLITS_FILE="splits_final_outer${OUTER_FOLD_IDX}.json"
+  HOLDOUT_FILE="train_test_split_outer${OUTER_FOLD_IDX}.json"
+else
+  SPLITS_FILE="splits_final_${SEED}.json"
+  HOLDOUT_FILE="train_test_split_${SEED}.json"
+fi
 IFS=' ' read -r -a FOLDS <<< "$FOLDS_STR"
 
 FULL_DATASET_DIR="${REPO_ROOT}/datasets/${DATASET}"
@@ -105,6 +119,7 @@ EVAL_OUTPUT_DIR="${RUN_ROOT}/evaluation_output"
 echo "[INFO] repo_root=${REPO_ROOT}"
 echo "[INFO] dataset=${DATASET} (id=${DATASET_ID}, code=${DATASET_CODE})"
 echo "[INFO] mode=${MODE}, trainer=${TRAINER}, folds=${FOLDS_STR}"
+echo "[INFO] split_scheme=${SPLIT_SCHEME}, seed=${SEED}, outer_fold_idx=${OUTER_FOLD_IDX}, inner_seed=${INNER_SEED}"
 echo "[INFO] split_files: cv=${SPLITS_FILE}, holdout=${HOLDOUT_FILE}"
 echo "[INFO] run_root=${RUN_ROOT}"
 
@@ -194,14 +209,28 @@ for f in "${SPLITS_FILE}" "splits_final_train.json" "${HOLDOUT_FILE}" "train_tes
   rm -f "${FULL_WORK_DATASET_DIR}/${f}"
 done
 
-echo "[INFO] Generating deterministic holdout + train-only CV splits"
-python3 "${REPO_ROOT}/datasets/generate_holdout_cv_splits.py" \
-  --dataset-dir "${FULL_WORK_DATASET_DIR}" \
-  --seed "${SEED}" \
-  --test-size "${TEST_SIZE}" \
-  --n-folds 5 \
-  --holdout-output "${HOLDOUT_FILE}" \
-  --cv-output "${SPLITS_FILE}"
+echo "[INFO] Generating deterministic splits"
+if [[ "${SPLIT_SCHEME}" == "nested" ]]; then
+  python3 "${REPO_ROOT}/datasets/generate_holdout_cv_splits.py" \
+    --dataset-dir "${FULL_WORK_DATASET_DIR}" \
+    --split-scheme nested \
+    --outer-fold "${OUTER_FOLD_IDX}" \
+    --outer-n-folds 5 \
+    --n-folds 5 \
+    --seed "${SEED}" \
+    --inner-seed "${INNER_SEED}" \
+    --holdout-output "${HOLDOUT_FILE}" \
+    --cv-output "${SPLITS_FILE}"
+else
+  python3 "${REPO_ROOT}/datasets/generate_holdout_cv_splits.py" \
+    --dataset-dir "${FULL_WORK_DATASET_DIR}" \
+    --split-scheme holdout \
+    --seed "${SEED}" \
+    --test-size "${TEST_SIZE}" \
+    --n-folds 5 \
+    --holdout-output "${HOLDOUT_FILE}" \
+    --cv-output "${SPLITS_FILE}"
+fi
 
 # Keep canonical compatibility filenames as aliases/copies.
 cp "${FULL_WORK_DATASET_DIR}/${SPLITS_FILE}" "${FULL_WORK_DATASET_DIR}/splits_final_train.json"
@@ -293,11 +322,17 @@ if [[ "${SKIP_TRAIN}" != "1" ]]; then
 
     MODEL_PATH="${RESULTS_ROOT}/${DATASET}/${TRAINER}__nnUNetPlans__${CONFIGURATION}/fold_${fold}"
     echo "[INFO] Uploading fold ${fold} model artifact from ${MODEL_PATH}"
-    python3 "${REPO_ROOT}/baselines/save_nnunet_run.py" \
+    SAVE_ARTIFACT_CMD=(
+      python3 "${REPO_ROOT}/baselines/save_nnunet_run.py" \
       --model-path "${MODEL_PATH}" \
       --fold "${fold}" \
       --dataset "${DATASET_CODE}" \
       --seed "${SEED}"
+    )
+    if [[ "${SPLIT_SCHEME}" == "nested" ]]; then
+      SAVE_ARTIFACT_CMD+=(--outer-fold-idx "${OUTER_FOLD_IDX}")
+    fi
+    "${SAVE_ARTIFACT_CMD[@]}"
   done
 
   echo "[INFO] Packaging nnUNet metadata artifact"
@@ -334,6 +369,9 @@ if [[ "${SKIP_EVAL}" != "1" ]]; then
     --nnunet-npp 1
     --nnunet-nps 1
   )
+  if [[ "${SPLIT_SCHEME}" == "nested" ]]; then
+    EVAL_CMD+=(--artifact-outer-fold-idx "${OUTER_FOLD_IDX}")
+  fi
   if [[ -n "${MAX_CASES}" ]]; then
     EVAL_CMD+=(--max-cases "${MAX_CASES}")
   fi
