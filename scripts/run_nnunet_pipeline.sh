@@ -189,23 +189,19 @@ fi
 echo "[INFO] Cleaning macOS resource-fork files under ${FULL_WORK_DATASET_DIR}"
 cleanup_macos_resource_forks "${FULL_WORK_DATASET_DIR}"
 
-# Prefer existing seed-specific split files from repo dataset; otherwise generate.
-if [[ -f "${REPO_DATASET_DIR_RESOLVED}/${SPLITS_FILE}" && -f "${REPO_DATASET_DIR_RESOLVED}/${HOLDOUT_FILE}" ]]; then
-  echo "[INFO] Reusing existing seed-specific splits from repo dataset"
-  cp "${REPO_DATASET_DIR_RESOLVED}/${SPLITS_FILE}" "${FULL_WORK_DATASET_DIR}/${SPLITS_FILE}"
-  cp "${REPO_DATASET_DIR_RESOLVED}/${HOLDOUT_FILE}" "${FULL_WORK_DATASET_DIR}/${HOLDOUT_FILE}"
-elif [[ -f "${FULL_WORK_DATASET_DIR}/${SPLITS_FILE}" && -f "${FULL_WORK_DATASET_DIR}/${HOLDOUT_FILE}" ]]; then
-  echo "[INFO] Reusing existing seed-specific splits from working dataset"
-else
-  echo "[INFO] Generating deterministic holdout + train-only CV splits"
-  python3 "${REPO_ROOT}/datasets/generate_holdout_cv_splits.py" \
-    --dataset-dir "${FULL_WORK_DATASET_DIR}" \
-    --seed "${SEED}" \
-    --test-size "${TEST_SIZE}" \
-    --n-folds 5 \
-    --holdout-output "${HOLDOUT_FILE}" \
-    --cv-output "${SPLITS_FILE}"
-fi
+# Always regenerate split files from scratch to avoid stale/contaminated metadata.
+for f in "${SPLITS_FILE}" "splits_final_train.json" "${HOLDOUT_FILE}" "train_test_split.json"; do
+  rm -f "${FULL_WORK_DATASET_DIR}/${f}"
+done
+
+echo "[INFO] Generating deterministic holdout + train-only CV splits"
+python3 "${REPO_ROOT}/datasets/generate_holdout_cv_splits.py" \
+  --dataset-dir "${FULL_WORK_DATASET_DIR}" \
+  --seed "${SEED}" \
+  --test-size "${TEST_SIZE}" \
+  --n-folds 5 \
+  --holdout-output "${HOLDOUT_FILE}" \
+  --cv-output "${SPLITS_FILE}"
 
 # Keep canonical compatibility filenames as aliases/copies.
 cp "${FULL_WORK_DATASET_DIR}/${SPLITS_FILE}" "${FULL_WORK_DATASET_DIR}/splits_final_train.json"
