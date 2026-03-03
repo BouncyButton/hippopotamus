@@ -16,7 +16,7 @@ Usage:
 
 Options:
   --dataset Dataset102_MNI          Target dataset folder name
-  --mode sanity|full                sanity => nnUNetTrainer_1epoch, full => nnUNetTrainer_250epochs
+  --mode sanity|full                sanity => outer_fold_idx=0 + all inner folds + nnUNetTrainer_1epoch, full => nnUNetTrainer_250epochs
   --trainer NAME                    Override trainer class
   --folds "0 1 2 3 4"               Space-separated fold list
   --test-size 0.2                   Holdout-only: test proportion
@@ -35,7 +35,7 @@ Options:
   --max-cases N                     Optional evaluate.py --max-cases
 
 Examples:
-  scripts/run_nnunet_pipeline.sh --dataset Dataset102_MNI --mode sanity --folds "0 1"
+  scripts/run_nnunet_pipeline.sh --dataset Dataset102_MNI --mode sanity
   scripts/run_nnunet_pipeline.sh --dataset Dataset103_ADNI --mode full --folds "0 1 2 3 4"
 EOF
 }
@@ -84,6 +84,17 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown argument: $1"; usage; exit 1 ;;
   esac
 done
+
+# sanity mode: always run nested CV for outer fold 0 across all inner folds.
+if [[ "$MODE" == "sanity" ]]; then
+  SPLIT_SCHEME="nested"
+  OUTER_FOLD_IDX="0"
+  SANITY_FOLDS=()
+  for ((i=0; i<INNER_N_FOLDS; i++)); do
+    SANITY_FOLDS+=("${i}")
+  done
+  FOLDS_STR="${SANITY_FOLDS[*]}"
+fi
 
 if [[ -z "$TRAINER" ]]; then
   if [[ "$MODE" == "sanity" ]]; then
