@@ -23,6 +23,8 @@ Options:
   --project NAME                    W&B project
   --entity NAME                     W&B entity
   --env-name NAME                   Conda env name (default: nnunetrpp_py38)
+  --myenv-name NAME                 Conda env for fix_unetrpp_splits_json.py (default: myenv)
+  --myenv-python PATH               Python executable for fix_unetrpp_splits_json.py (overrides --myenv-name)
   --skip-dataset-create             Do not run dataset creation script
   --skip-train                      Do not train
   --skip-eval                       Skip evaluation/evaluate.py
@@ -51,6 +53,8 @@ CROP_SIZE="48 56 40"
 RUN_ROOT=""
 PROJECT="hippopotamus-project"
 ENTITY="hippopotamus"
+MYENV_NAME="myenv"
+MYENV_PYTHON=""
 SKIP_DATASET_CREATE="1"
 SKIP_TRAIN="0"
 SKIP_EVAL="0"
@@ -74,6 +78,8 @@ while [[ $# -gt 0 ]]; do
     --project) PROJECT="$2"; shift 2 ;;
     --entity) ENTITY="$2"; shift 2 ;;
     --env-name) ENV_NAME="$2"; shift 2 ;;
+    --myenv-name) MYENV_NAME="$2"; shift 2 ;;
+    --myenv-python) MYENV_PYTHON="$2"; shift 2 ;;
     --skip-dataset-create) SKIP_DATASET_CREATE="1"; shift ;;
     --skip-train) SKIP_TRAIN="1"; shift ;;
     --skip-eval) SKIP_EVAL="1"; shift ;;
@@ -101,6 +107,7 @@ CONDA_BASE="$(conda info --base)"
 # shellcheck source=/dev/null
 source "${CONDA_BASE}/etc/profile.d/conda.sh"
 conda activate "${ENV_NAME}"
+PY38_PYTHON="$(command -v python)"
 
 DATASET_ID="$(echo "${DATASET}" | sed -E 's/^Dataset([0-9]+)_.+$/\1/')"
 DATASET_CODE="$(echo "${DATASET}" | cut -d'_' -f2)"
@@ -316,22 +323,69 @@ if [[ "${SKIP_TRAIN}" != "1" ]]; then
   )
 
   PREPROC_TASK_DIR="${PREPROC_ROOT}/${TASK_NAME}"
-  if [[ ! -f "${PREPROC_TASK_DIR}/splits_final.pkl" ]]; then
-    echo "[ERROR] Expected split file not found: ${PREPROC_TASK_DIR}/splits_final.pkl"
+  SPLITS_PKL="${PREPROC_TASK_DIR}/splits_final.pkl"
+  SPLITS_JSON="${PREPROC_TASK_DIR}/splits_final.json"
+  FIXED_SPLITS_JSON="${PREPROC_TASK_DIR}/splits_final_fixed.json"
+  CV_SPLITS_JSON="${FULL_WORK_DATASET_DIR}/${SPLITS_FILE}"
+  if [[ ! -f "${CV_SPLITS_JSON}" ]]; then
+    echo "[ERROR] Expected CV split json not found: ${CV_SPLITS_JSON}"
     exit 1
   fi
 
-  echo "[INFO] Fixing UNETR++ split file to enforce patient-safe grouping"
-  python "${REPO_ROOT}/datasets/fix_unetrpp_splits_pkl_to_json.py" \
-    -i "${PREPROC_TASK_DIR}/splits_final.pkl" \
-    -o "${PREPROC_TASK_DIR}/splits_final.json"
-  python "${REPO_ROOT}/datasets/fix_unetrpp_splits_json.py" \
-    -i "${PREPROC_TASK_DIR}/splits_final.json" \
-    -o "${PREPROC_TASK_DIR}/splits_final_fixed.json" \
-    --dataset "${DATASET_CODE}"
-  python "${REPO_ROOT}/datasets/fix_unetrpp_splits_json_to_pkl.py" \
-    -i "${PREPROC_TASK_DIR}/splits_final_fixed.json" \
-    -o "${PREPROC_TASK_DIR}/splits_final.pkl"
+  if [[ ! -f "${SPLITS_PKL}" ]]; then
+    echo "[INFO] Preprocess did not create splits_final.pkl; bootstrapping it from pipeline CV splits"
+    python - <<PY
+import json
+src = "${CV_SPLITS_JSON}"
+dst = "${PREPROC_TASK_DIR}/splits_final_from_pipeline.json"
+splits = json.load(open(src))
+if isinstance(splits, dict) and "splits" in splits:
+    payload = splits
+elif isinstance(splits, list):
+    payload = {"splits": splits}
+else:
+    raise RuntimeError(f"Unsupported splits json format in {src}")
+json.dump(payload, open(dst, "w"), indent=2)
+print(f"Wrote {dst}")
+PY
+
+    "${PY38_PYTHON}" "${REPO_ROOT}/datasets/fix_unetrpp_splits_json_to_pkl.py" \
+      -i "${PREPROC_TASK_DIR}/splits_final_from_pipeline.json" \
+      -o "${SPLITS_PKL}"
+  fi
+
+  echo "[INFO] Converting splits_final.pkl -> splits_final.json with ${PY38_PYTHON}"
+  "${PY38_PYTHON}" "${REPO_ROOT}/datasets/fix_unetrpp_splits_pkl_to_json.py" \
+    -i "${SPLITS_PKL}" \
+    -o "${SPLITS_JSON}"
+
+  if [[ "${DATASET_CODE}" == "MNI" || "${DATASET_CODE}" == "ADNI" || "${DATASET_CODE}" == "COBRA" ]]; then
+    if [[ -n "${MYENV_PYTHON}" ]]; then
+      echo "[INFO] Applying dataset-aware split fix for ${DATASET_CODE} with ${MYENV_PYTHON}"
+      "${MYENV_PYTHON}" "${REPO_ROOT}/datasets/fix_unetrpp_splits_json.py" \
+        -i "${SPLITS_JSON}" \
+        -o "${FIXED_SPLITS_JSON}" \
+        --dataset "${DATASET_CODE}"
+    elif conda env list | awk '{print $1}' | grep -qx "${MYENV_NAME}"; then
+      echo "[INFO] Applying dataset-aware split fix for ${DATASET_CODE} with conda env ${MYENV_NAME}"
+      conda run -n "${MYENV_NAME}" python "${REPO_ROOT}/datasets/fix_unetrpp_splits_json.py" \
+        -i "${SPLITS_JSON}" \
+        -o "${FIXED_SPLITS_JSON}" \
+        --dataset "${DATASET_CODE}"
+    else
+      echo "[ERROR] Required env '${MYENV_NAME}' not found for fix_unetrpp_splits_json.py."
+      echo "        Provide --myenv-python /path/to/python or --myenv-name <existing-env>."
+      exit 1
+    fi
+  else
+    echo "[INFO] No dataset-aware split fixer configured for ${DATASET_CODE}; using pipeline splits as-is"
+    cp "${SPLITS_JSON}" "${FIXED_SPLITS_JSON}"
+  fi
+
+  echo "[INFO] Converting splits_final_fixed.json -> splits_final.pkl with ${PY38_PYTHON}"
+  "${PY38_PYTHON}" "${REPO_ROOT}/datasets/fix_unetrpp_splits_json_to_pkl.py" \
+    -i "${FIXED_SPLITS_JSON}" \
+    -o "${SPLITS_PKL}"
 
   CROP_ARGS=()
   if [[ -n "${CROP_SIZE}" ]]; then
