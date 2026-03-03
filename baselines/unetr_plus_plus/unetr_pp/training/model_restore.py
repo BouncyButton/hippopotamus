@@ -66,13 +66,16 @@ def restore_model(pkl_file, checkpoint=None, train=False, fp16=None,folder=None)
         plans_file = join(preprocessing_output_dir, task, default_plans_identifier + "_plans_2D.pkl")
     else:
         plans_file = join(preprocessing_output_dir, task, default_plans_identifier + "_plans_3D.pkl")
-    info['init'] = list(info['init'])
-    info['init'][0]=plans_file
-    info['init'] = tuple(info['init'])
+    init = list(init)
+    init[0] = plans_file
+    init = tuple(init)
+    info['init'] = init
     
     if 'nnUNet' in name:
         name=name.replace('nnUNet','nnFormer')
-    if len(init)>10:
+    # Legacy compatibility branch for older trainer signatures.
+    # Do NOT apply this to UNETR++ trainer init tuples because they now carry crop sizes.
+    if len(init) > 10 and name != "unetr_pp_trainer_general_purpose":
         init=list(init)
         del init[2]
         del init[-2]
