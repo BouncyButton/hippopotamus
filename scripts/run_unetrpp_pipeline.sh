@@ -262,25 +262,6 @@ full_dir = Path("${FULL_WORK_DATASET_DIR}")
 task_dir = Path("${TASK_DATASET_DIR}")
 holdout = json.load(open(full_dir / "train_test_split.json"))
 train_cases = [c for c in holdout["train"] if not str(c).startswith("._")]
-dataset_json_src = Path("${DATASET_JSON_SRC}")
-
-dataset_json = json.load(open(dataset_json_src))
-dataset_json["numTraining"] = len(train_cases)
-if "training" in dataset_json and isinstance(dataset_json["training"], list):
-    allowed = set(train_cases)
-    filtered = []
-    for item in dataset_json["training"]:
-        if isinstance(item, dict):
-            image_path = str(item.get("image", ""))
-            label_path = str(item.get("label", ""))
-            image_case = Path(image_path).name.replace("_0000.nii.gz", "").replace(".nii.gz", "")
-            label_case = Path(label_path).name.replace(".nii.gz", "")
-            if image_case in allowed or label_case in allowed:
-                filtered.append(item)
-    if filtered:
-        dataset_json["training"] = filtered
-with open(task_dir / "dataset.json", "w") as f:
-    json.dump(dataset_json, f, indent=2)
 
 for case in train_cases:
     src_img = full_dir / "imagesTr" / f"{case}_0000.nii.gz"
@@ -291,6 +272,13 @@ for case in train_cases:
     shutil.copy(src_lbl, task_dir / "labelsTr" / src_lbl.name)
 print(f"Copied {len(train_cases)} train cases to {task_dir}")
 PY
+
+echo "[INFO] Generating UNETR++ dataset.json with explicit file listing"
+python "${REPO_ROOT}/datasets/create_unetrpp_dataset_json.py" \
+  --task-dir "${TASK_DATASET_DIR}" \
+  --source-json "${DATASET_JSON_SRC}" \
+  --output "${TASK_DATASET_DIR}/dataset.json" \
+  --name "${DATASET_CODE}"
 
 mkdir -p "${RAW_BASE}/${DATASET}"
 cp "${FULL_WORK_DATASET_DIR}/train_test_split.json" "${RAW_BASE}/${DATASET}/train_test_split.json"
