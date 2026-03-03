@@ -30,6 +30,7 @@ from unetr_pp.postprocessing.connected_components import load_remove_save, load_
 from unetr_pp.training.model_restore import load_model_and_checkpoint_files
 from unetr_pp.training.network_training.Trainer_acdc import Trainer_acdc
 from unetr_pp.training.network_training.Trainer_synapse import Trainer_synapse
+from unetr_pp.training.network_training.Trainer_general_purpose import TrainerGeneralPurpose
 
 from unetr_pp.utilities.one_hot_encoding import to_one_hot
 
@@ -99,7 +100,7 @@ def preprocess_multithreaded(trainer, list_of_lists, output_files, num_processes
     num_processes = min(len(list_of_lists), num_processes)
 
     classes = list(range(1, trainer.num_classes))
-    assert isinstance(trainer, Trainer_acdc) or isinstance(trainer, Trainer_synapse)
+    assert isinstance(trainer, Trainer_acdc) or isinstance(trainer, Trainer_synapse) or isinstance(trainer, TrainerGeneralPurpose)
     q = Queue(1)
     processes = []
     for i in range(num_processes):
