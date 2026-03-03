@@ -393,11 +393,16 @@ PY
     CROP_ARGS=(--crop_size "${CROP_ARR[@]}")
   fi
 
+  EPOCH_ARGS=()
+  if [[ "${MODE}" == "sanity" ]]; then
+    EPOCH_ARGS=(--epochs 2)
+  fi
+
   for fold in "${FOLDS[@]}"; do
     echo "[INFO] Training fold ${fold} with ${TRAINER}"
     (
       cd "${REPO_ROOT}/baselines/unetr_plus_plus"
-      python -m unetr_pp.run.run_training "${CONFIGURATION}" "${TRAINER}" "${DATASET_ID}" "${fold}" "${CROP_ARGS[@]}"
+      python -m unetr_pp.run.run_training "${CONFIGURATION}" "${TRAINER}" "${DATASET_ID}" "${fold}" "${CROP_ARGS[@]}" "${EPOCH_ARGS[@]}"
     )
 
     MODEL_PATH="${RESULTS_ROOT}/unetr_pp/${CONFIGURATION}/${TASK_NAME}/${TRAINER}__unetr_pp_Plansv2.1/fold_${fold}"
