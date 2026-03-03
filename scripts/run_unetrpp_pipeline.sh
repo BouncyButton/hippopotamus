@@ -375,13 +375,15 @@ PY
       "${MYENV_PYTHON}" "${REPO_ROOT}/datasets/fix_unetrpp_splits_json.py" \
         -i "${SPLITS_JSON}" \
         -o "${FIXED_SPLITS_JSON}" \
-        --dataset "${DATASET_CODE}"
+        --dataset "${DATASET_CODE}" \
+        --n-splits "${INNER_N_FOLDS}"
     elif conda env list | awk '{print $1}' | grep -qx "${MYENV_NAME}"; then
       echo "[INFO] Applying dataset-aware split fix for ${DATASET_CODE} with conda env ${MYENV_NAME}"
       conda run -n "${MYENV_NAME}" python "${REPO_ROOT}/datasets/fix_unetrpp_splits_json.py" \
         -i "${SPLITS_JSON}" \
         -o "${FIXED_SPLITS_JSON}" \
-        --dataset "${DATASET_CODE}"
+        --dataset "${DATASET_CODE}" \
+        --n-splits "${INNER_N_FOLDS}"
     else
       echo "[ERROR] Required env '${MYENV_NAME}' not found for fix_unetrpp_splits_json.py."
       echo "        Provide --myenv-python /path/to/python or --myenv-name <existing-env>."

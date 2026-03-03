@@ -45,6 +45,7 @@ def main():
     parser.add_argument("-i", "--input", required=True, help="Input JSON path")
     parser.add_argument("-o", "--output", required=True, help="Output JSON path")
     parser.add_argument("-d", "--dataset", default=None, help="dataset codename (MNI, ADNI, COBRA)")
+    parser.add_argument("--n-splits", type=int, default=5, help="number of CV folds")
     parser.add_argument("--seed", type=int, default=42, help="random seed for shuffle")
 
     args = parser.parse_args()
@@ -66,8 +67,15 @@ def main():
         raise ValueError("Could not infer dataset from output path. Please provide --dataset.")
 
     groups = [get_patient_id(c, dataset) for c in all_cases]
+    n_unique_groups = len(set(groups))
+    if args.n_splits < 2:
+        raise ValueError("--n-splits must be >= 2")
+    if args.n_splits > n_unique_groups:
+        raise ValueError(
+            f"--n-splits ({args.n_splits}) cannot be greater than number of unique patient groups ({n_unique_groups})"
+        )
 
-    gkf = GroupKFold(n_splits=5, shuffle=True, random_state=args.seed)
+    gkf = GroupKFold(n_splits=args.n_splits, shuffle=True, random_state=args.seed)
 
     new_splits = []
     cases_array = np.array(all_cases)
