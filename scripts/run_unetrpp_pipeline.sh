@@ -242,16 +242,32 @@ rm -rf "${TASK_DATASET_DIR}"
 mkdir -p "${TASK_DATASET_DIR}/imagesTr" "${TASK_DATASET_DIR}/labelsTr"
 
 DATASET_JSON_SRC=""
-for c in "${FULL_WORK_DATASET_DIR}/dataset.json" "${SOURCE_DATASET_DIR_RESOLVED}/dataset.json"; do
+REPO_DATASET_DIR_RESOLVED="$(resolve_dataset_dir "${FULL_DATASET_DIR}" "${DATASET}")"
+DATASET_JSON_CANDIDATES=(
+  "${FULL_WORK_DATASET_DIR}/dataset.json"
+  "${SOURCE_DATASET_DIR_RESOLVED}/dataset.json"
+  "${REPO_DATASET_DIR_RESOLVED}/dataset.json"
+  "${FULL_DATASET_DIR}/dataset.json"
+)
+for c in "${DATASET_JSON_CANDIDATES[@]}"; do
   if [[ -f "${c}" ]]; then
     DATASET_JSON_SRC="${c}"
     break
   fi
 done
 if [[ -z "${DATASET_JSON_SRC}" ]]; then
-  echo "[ERROR] dataset.json not found under ${FULL_WORK_DATASET_DIR} or ${SOURCE_DATASET_DIR_RESOLVED}"
-  exit 1
+  echo "[WARN] dataset.json not found in expected locations. Creating a minimal source json."
+  DATASET_JSON_SRC="${RUN_ROOT}/dataset_json_fallback_${DATASET}.json"
+  cat > "${DATASET_JSON_SRC}" <<EOF
+{
+  "channel_names": {"0": "MRI"},
+  "labels": {"background": 0, "foreground": 1},
+  "name": "${DATASET_CODE}",
+  "file_ending": ".nii.gz"
+}
+EOF
 fi
+echo "[INFO] dataset_json_src=${DATASET_JSON_SRC}"
 
 python - <<PY
 import json
