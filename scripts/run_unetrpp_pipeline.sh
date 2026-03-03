@@ -8,7 +8,7 @@ Usage:
 
 Options:
   --dataset Dataset102_MNI          Target dataset folder name
-  --mode sanity|full                sanity => fold 0 only, full => provided --folds
+  --mode sanity|full                sanity => outer_fold_idx=0 + all inner folds + 2 epochs, full => provided --folds with trainer default epochs
   --trainer NAME                    UNETR++ trainer class (default: unetr_pp_trainer_general_purpose)
   --folds "0 1 2 3 4"               Space-separated fold list
   --test-size 0.2                   Holdout-only: test proportion
@@ -89,8 +89,15 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# sanity mode runs nested CV for outer fold 0 across all inner folds and overrides training to 2 epochs.
 if [[ "${MODE}" == "sanity" ]]; then
-  FOLDS_STR="0"
+  SPLIT_SCHEME="nested"
+  OUTER_FOLD_IDX="0"
+  SANITY_FOLDS=()
+  for ((i=0; i<INNER_N_FOLDS; i++)); do
+    SANITY_FOLDS+=("${i}")
+  done
+  FOLDS_STR="${SANITY_FOLDS[*]}"
 fi
 
 if [[ -z "${RUN_ROOT}" ]]; then
@@ -394,6 +401,7 @@ PY
   fi
 
   EPOCH_ARGS=()
+  # Keep full mode behavior unchanged: only sanity overrides epochs.
   if [[ "${MODE}" == "sanity" ]]; then
     EPOCH_ARGS=(--epochs 2)
   fi

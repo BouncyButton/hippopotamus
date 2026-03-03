@@ -91,6 +91,8 @@ def main():
                              'Optional. Beta. Use with caution.')
     parser.add_argument('--crop_size', type=int, nargs='+', default=None,
                         help='Crop size to use for training. Default: None (use patch size from plans)')
+    parser.add_argument('--epochs', type=int, default=None,
+                        help='Override trainer max_num_epochs. Default: None (use trainer default)')
 
     args = parser.parse_args()
 
@@ -145,6 +147,11 @@ def main():
         trainer = trainer_class(plans_file, fold, output_folder=output_folder_name, dataset_directory=dataset_directory,
                                 batch_dice=batch_dice, stage=stage, unpack_data=decompress_data,
                                 deterministic=deterministic, fp16=run_mixed_precision)
+    if args.epochs is not None:
+        if args.epochs < 1:
+            raise ValueError("--epochs must be >= 1")
+        trainer.max_num_epochs = int(args.epochs)
+        print(f"[INFO] Overriding max_num_epochs to {trainer.max_num_epochs}")
     if args.disable_saving:
         trainer.save_final_checkpoint = False  # whether or not to save the final checkpoint
         trainer.save_best_checkpoint = False  # whether or not to save the best checkpoint according to
