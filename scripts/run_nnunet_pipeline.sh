@@ -45,6 +45,7 @@ DATASET="Dataset102_MNI"
 MODE="sanity"
 TRAINER=""
 FOLDS_STR="0"
+FOLDS_ARG_SET="0"
 TEST_SIZE="0.2"
 SEED="42"
 OUTER_FOLD_IDX="0"
@@ -65,7 +66,7 @@ while [[ $# -gt 0 ]]; do
     --dataset) DATASET="$2"; shift 2 ;;
     --mode) MODE="$2"; shift 2 ;;
     --trainer) TRAINER="$2"; shift 2 ;;
-    --folds) FOLDS_STR="$2"; shift 2 ;;
+    --folds) FOLDS_STR="$2"; FOLDS_ARG_SET="1"; shift 2 ;;
     --test-size) TEST_SIZE="$2"; shift 2 ;;
     --seed) SEED="$2"; shift 2 ;;
     --outer_fold_idx) OUTER_FOLD_IDX="$2"; shift 2 ;;
@@ -89,11 +90,13 @@ done
 if [[ "$MODE" == "sanity" ]]; then
   SPLIT_SCHEME="nested"
   OUTER_FOLD_IDX="0"
-  SANITY_FOLDS=()
-  for ((i=0; i<INNER_N_FOLDS; i++)); do
-    SANITY_FOLDS+=("${i}")
-  done
-  FOLDS_STR="${SANITY_FOLDS[*]}"
+  if [[ "${FOLDS_ARG_SET}" != "1" ]]; then
+    SANITY_FOLDS=()
+    for ((i=0; i<INNER_N_FOLDS; i++)); do
+      SANITY_FOLDS+=("${i}")
+    done
+    FOLDS_STR="${SANITY_FOLDS[*]}"
+  fi
 fi
 
 if [[ -z "$TRAINER" ]]; then
