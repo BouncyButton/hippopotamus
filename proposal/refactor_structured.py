@@ -166,6 +166,63 @@ def dimension_soft(pred, gamma=1e-6):
     return 1.0 / (1.0 + gamma * diff ** 2)
 
 
+def dimension_soft_2(pred, gt, gamma=1.0):
+    gt = torch.nn.functional.one_hot(gt.long(), num_classes=3).squeeze(1).permute(0, 4, 1, 2, 3).float()
+    gt_p1 = gt[:, 1]
+    gt_p2 = gt[:, 2]
+
+    mu = gt_p1.sum(dim=(1, 2, 3)) - gt_p2.sum(dim=(1, 2, 3))
+    diff = pred.sum(dim=(1, 2, 3))[:, 1] - pred.sum(dim=(1, 2, 3))[:, 2]
+
+    return torch.exp(-gamma * (diff - mu) ** 2)
+
+
+class DimensionConstraint(torch.nn.Module):
+    def __init__(self, dl: DataLoader):
+        super().__init__()
+        self.mu, self.std = self.compute_global_stats(dl)
+
+    def compute_global_stats(self, data_loader):
+        all_diffs = []
+        for batch in tqdm(data_loader, desc="Computing dimension constraint stats"):
+            labels = batch["label"].to(DEVICE)
+            hard = labels.squeeze(1).long()
+            mask1 = hard == 1
+            mask2 = hard == 2
+
+            n1 = mask1.float().mean(dim=(1, 2, 3))
+            n2 = mask2.float().mean(dim=(1, 2, 3))
+
+            diff = torch.log(n1 / (n2 + 1e-8) + 1e-8)
+            all_diffs.append(diff)
+
+        all_diffs = torch.cat(all_diffs).float()
+        mu = all_diffs.mean().item()
+        var = all_diffs.var(unbiased=False).item()
+        std = all_diffs.std(unbiased=False).item()
+        print(f"dimension constraint stats: mean={mu:.8f}, std={std:.8f}")
+
+        return mu, std
+
+    def forward(self, pred):
+        probs = torch.softmax(pred, dim=1)
+        V = probs.mean(dim=(2, 3, 4))  # [B, C]
+
+        V1 = V[:, 1]
+        V2 = V[:, 2]
+
+        d = torch.log(V1 / (V2 + 1e-8) + 1e-8)
+
+        z = (d - self.mu) / (self.std + 1e-8)
+
+        # score = torch.exp(-0.5 * z ** 2)
+        margin = 1.96
+        # apply a margin to encourage being within the 95% confidence interval of the observed distribution with a relu
+
+        score = torch.exp(-0.5 * torch.clamp(z.abs() - margin, min=0.0) ** 2)
+        return score
+
+
 def chamfer_distance(pred):
     hard = pred.argmax(dim=1)
     mask1 = hard == 1
@@ -325,6 +382,21 @@ def build_dataset(args):
         download=True,
         transform=build_transforms(args.pixdim, args.spatial_size),
     )
+
+
+def build_fold_subsets(dataset, folds, fold_number, train_fraction):
+    kf = KFold(n_splits=folds, shuffle=True, random_state=42)
+
+    for current_fold, (train_idx, val_idx) in enumerate(kf.split(dataset), start=1):
+        if current_fold != fold_number:
+            continue
+
+        train_limit = max(1, int(train_fraction * len(train_idx)))
+        train_subset = torch.utils.data.Subset(dataset, train_idx[:train_limit])
+        val_subset = torch.utils.data.Subset(dataset, val_idx)
+        return train_subset, val_subset
+
+    raise ValueError(f"Fold {fold_number} is outside the available range 1..{folds}.")
 
 
 def evaluate(model, val_loader, device):
@@ -512,11 +584,14 @@ def constraint_informed_train(model, train_loader, val_loader, args, device):
 
     eq = ltn.Predicate(func=eq_fn)
 
+    simdimconstraint = DimensionConstraint(train_loader)
+
     dl = ltn.Predicate(func=my_dice_loss)
     min_dst = ltn.Function(func=soft_chamfer_pooled)
     sim_dim = ltn.Function(func=dimension_soft)
     nested_fn = ltn.Function(func=nested)
     not_fn = ltn.Connective(ltn.fuzzy_ops.NotStandard())
+    sim_dim2 = ltn.Function(model=simdimconstraint)
 
     for epoch in range(args.epochs):
         model.train()
@@ -540,7 +615,8 @@ def constraint_informed_train(model, train_loader, val_loader, args, device):
 
             seg_sat = forall(ltn.diag(x, y), dl(segmentator(x), y)).value
             prox_sat = forall(pred, eq(min_dst(pred), zero)).value
-            size_sat = forall(pred, sim_dim(pred)).value
+            # size_sat = forall(pred, sim_dim(pred)).value
+            size_sat = forall(pred, sim_dim2(pred)).value
             # not_nested_sat = forall(pred, not_fn(nested_fn(pred))).value
 
             satisfaction = sat_agg(seg_sat, prox_sat, size_sat)  # , not_nested_sat)
@@ -610,21 +686,18 @@ def train_one_fold(model, train_loader, val_loader, args, device):
 
 def run_cross_validation(args):
     dataset = build_dataset(args)
-    kf = KFold(n_splits=args.folds, shuffle=True, random_state=42)
     save_dir = Path(args.save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
 
     dice_scores = []
 
-    for fold, (train_idx, val_idx) in enumerate(kf.split(dataset), start=1):
+    for fold in range(1, args.folds + 1):
         if args.max_folds > 0 and fold > args.max_folds:
             break
 
         print(f"Fold {fold}/{args.folds}")
 
-        train_limit = max(1, int(args.train_fraction * len(train_idx)))
-        train_subset = torch.utils.data.Subset(dataset, train_idx[:train_limit])
-        val_subset = torch.utils.data.Subset(dataset, val_idx)
+        train_subset, val_subset = build_fold_subsets(dataset, args.folds, fold, args.train_fraction)
 
         train_loader = DataLoader(
             train_subset,
