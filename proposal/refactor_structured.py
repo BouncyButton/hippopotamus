@@ -254,8 +254,8 @@ def soft_chamfer_pooled(pred, tau=10.0, pool=5, eps=1e-8):
 
     # --- downsample ---
     if pool > 1:
-        p1 = torch.nn.functional.avg_pool3d(p1, kernel_size=pool, stride=pool)
-        p2 = torch.nn.functional.avg_pool3d(p2, kernel_size=pool, stride=pool)
+        p1 = torch.nn.functional.max_pool3d(p1, kernel_size=pool, stride=pool)
+        p2 = torch.nn.functional.max_pool3d(p2, kernel_size=pool, stride=pool)
 
     B, _, H, W, D = p1.shape
     device = pred.device
