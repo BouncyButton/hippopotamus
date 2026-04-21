@@ -608,10 +608,11 @@ def save_validation_examples(model, val_loader, device, args, epoch):
                 saved_samples += 1
 
 
-def baseline_train(model, train_loader, val_loader, args, device):
+def baseline_train(model, train_loader, val_loader, args, device, schedule='base'):
     optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     steps = args.epochs * len(train_loader)
-    scheduler = WarmupCosineSchedule(optimizer, warmup_steps=max(1, steps // 10), t_total=max(1, steps))
+    if schedule == 'cosine':
+        scheduler = WarmupCosineSchedule(optimizer, warmup_steps=max(1, steps // 10), t_total=max(1, steps))
     loss_fn = DiceLoss(to_onehot_y=True, softmax=True)
 
     for epoch in range(args.epochs):
@@ -631,14 +632,16 @@ def baseline_train(model, train_loader, val_loader, args, device):
         dice_score = evaluate(model, val_loader, device)
         print(f"val dice score: {dice_score:.4f}")
         save_validation_examples(model, val_loader, device, args, epoch)
-        scheduler.step()
+        if schedule == 'cosine':
+            scheduler.step()
     return model
 
 
-def constraint_informed_train(model, train_loader, val_loader, args, device):
+def constraint_informed_train(model, train_loader, val_loader, args, device, schedule='base'):
     optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     steps = args.epochs * len(train_loader)
-    scheduler = WarmupCosineSchedule(optimizer, warmup_steps=max(1, steps // 10), t_total=max(1, steps))
+    if schedule == 'cosine':
+        scheduler = WarmupCosineSchedule(optimizer, warmup_steps=max(1, steps // 10), t_total=max(1, steps))
     parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
 
     segmentator = ltn.Function(model)
@@ -652,7 +655,6 @@ def constraint_informed_train(model, train_loader, val_loader, args, device):
 
     dl = ltn.Predicate(func=my_dice_loss)
     min_dst = ltn.Function(func=soft_chamfer_pooled)
-    sim_dim = ltn.Function(func=dimension_soft)
     nested_fn = ltn.Function(func=soft_nested)
     not_fn = ltn.Connective(ltn.fuzzy_ops.NotStandard())
     sim_dim2 = ltn.Function(model=simdimconstraint)
@@ -671,7 +673,6 @@ def constraint_informed_train(model, train_loader, val_loader, args, device):
             y = ltn.Variable("y", labels)
 
             outputs = model(inputs)
-            # pred = torch.argmax(outputs, dim=1)
             pred = outputs
             pred = ltn.Variable("pred", pred)
 
@@ -679,7 +680,6 @@ def constraint_informed_train(model, train_loader, val_loader, args, device):
 
             seg_sat = forall(ltn.diag(x, y), dl(segmentator(x), y)).value
             prox_sat = forall(pred, eq(min_dst(pred), zero)).value
-            # size_sat = forall(pred, sim_dim(pred)).value
             size_sat = forall(pred, sim_dim2(pred)).value
             not_nested_sat = forall(pred, not_fn(nested_fn(pred))).value
 
@@ -738,7 +738,8 @@ def constraint_informed_train(model, train_loader, val_loader, args, device):
         dice_score = evaluate(model, val_loader, device)
         print(f"val dice score: {dice_score:.4f}")
         save_validation_examples(model, val_loader, device, args, epoch)
-        scheduler.step()
+        if schedule == 'cosine':
+            scheduler.step()
     return model
 
 
