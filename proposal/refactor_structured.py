@@ -247,7 +247,7 @@ def chamfer_distance(pred):
     return chamfer_dists
 
 
-def soft_chamfer_pooled(pred, tau=10.0, pool=5, eps=1e-8):
+def soft_chamfer_pooled(pred, tau=1.0, pool=5, eps=1e-8):
     probs = torch.softmax(pred, dim=1)
     p1 = probs[:, 1:2]  # keep channel dim
     p2 = probs[:, 2:3]
