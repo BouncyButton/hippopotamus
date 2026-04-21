@@ -149,7 +149,7 @@ def soft_nested(pred):
     return soft_nested_score(p1, p2)
 
 
-def soft_nested_score(p1, p2, num_pairs=50, num_steps=20, strategy='mean'):
+def soft_nested_score(p1, p2, num_pairs=50, num_steps=20, strategy='max'):
     """
     p1, p2: Softmax probabilities (B, 1, H, W, D)
     """
