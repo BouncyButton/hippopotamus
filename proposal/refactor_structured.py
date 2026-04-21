@@ -137,6 +137,70 @@ def sample_and_check(mask1, mask2, num_samples=20):
     return counts
 
 
+import torch
+import torch.nn.functional as F
+
+
+def soft_nested(pred):
+    soft = torch.softmax(pred, dim=1)
+    p1 = soft[:, 1:2]  # keep channel dim
+    p2 = soft[:, 2:3]
+
+    return soft_nested_score(p1, p2)
+
+
+def soft_nested_score(p1, p2, num_pairs=50, num_steps=20, strategy='mean'):
+    """
+    p1, p2: Softmax probabilities (B, 1, H, W, D)
+    """
+    B, C, H, W, D = p1.shape
+    device = p1.device
+
+    # 1. Randomly sample endpoint coordinates in range [-1, 1] for grid_sample
+    # (B, num_pairs, 2, 3) -> 2 points (src, dst) per pair, 3 coordinates each
+    coords = torch.rand(B, num_pairs, 2, 3, device=device) * 2 - 1
+    src = coords[:, :, 0, :]  # (B, num_pairs, 3)
+    dst = coords[:, :, 1, :]  # (B, num_pairs, 3)
+
+    # 2. Linear interpolation between src and dst
+    # t shape: (num_steps,)
+    t = torch.linspace(0, 1, num_steps, device=device).view(1, 1, num_steps, 1)
+    # paths shape: (B, num_pairs, num_steps, 3)
+    paths = src.unsqueeze(2) * (1 - t) + dst.unsqueeze(2) * t
+
+    # 3. Sample p1 at endpoints and p2 along the path
+    # Reshape paths for grid_sample: (B, num_pairs * num_steps, 1, 1, 3)
+    sampling_grid = paths.view(B, -1, 1, 1, 3)
+
+    # Sample p2 along the whole path
+    sampled_p2 = F.grid_sample(p2, sampling_grid, align_corners=True)
+    sampled_p2 = sampled_p2.view(B, num_pairs, num_steps)
+
+    # Sample p1 only at the start and end points
+    src_p1 = F.grid_sample(p1, src.view(B, num_pairs, 1, 1, 3), align_corners=True).view(B, num_pairs)
+    dst_p1 = F.grid_sample(p1, dst.view(B, num_pairs, 1, 1, 3), align_corners=True).view(B, num_pairs)
+
+    # 4. Compute Violation
+    # We want to penalize if (src is M1 AND dst is M1) AND (any point in path is M2)
+    # Using SoftMaximum (or just mean) for the path violation
+    if strategy == 'max':
+        path_violation = torch.max(sampled_p2, dim=2)[0]
+    elif strategy == 'mean':
+        path_violation = sampled_p2.mean(dim=2)
+    elif strategy == 'logsumexp':
+        temp = 1.0
+        path_violation = temp * torch.logsumexp(sampled_p2 / temp, dim=2)
+    elif strategy == 'prob':
+        path_violation = 1 - torch.prod(1 - sampled_p2, dim=2)
+    else:
+        raise ValueError(f"Unknown strategy: {strategy}")
+
+    # The total loss is the product of probabilities
+    loss = (src_p1 * dst_p1 * path_violation).mean(dim=1)  # mean over pairs
+
+    return loss
+
+
 def dimension(pred, gamma=0.0001, epsilon=5000.0):
     hard = pred.argmax(dim=1)
     mask1 = hard == 1
@@ -589,7 +653,7 @@ def constraint_informed_train(model, train_loader, val_loader, args, device):
     dl = ltn.Predicate(func=my_dice_loss)
     min_dst = ltn.Function(func=soft_chamfer_pooled)
     sim_dim = ltn.Function(func=dimension_soft)
-    nested_fn = ltn.Function(func=nested)
+    nested_fn = ltn.Function(func=soft_nested)
     not_fn = ltn.Connective(ltn.fuzzy_ops.NotStandard())
     sim_dim2 = ltn.Function(model=simdimconstraint)
 
@@ -617,31 +681,31 @@ def constraint_informed_train(model, train_loader, val_loader, args, device):
             prox_sat = forall(pred, eq(min_dst(pred), zero)).value
             # size_sat = forall(pred, sim_dim(pred)).value
             size_sat = forall(pred, sim_dim2(pred)).value
-            # not_nested_sat = forall(pred, not_fn(nested_fn(pred))).value
+            not_nested_sat = forall(pred, not_fn(nested_fn(pred))).value
 
-            satisfaction = sat_agg(seg_sat, prox_sat, size_sat)  # , not_nested_sat)
+            satisfaction = sat_agg(seg_sat, prox_sat, size_sat, not_nested_sat)
             loss = 1.0 - satisfaction
 
             seg_grad = gradient_vector(parameters, seg_sat, retain_graph=True)
             prox_grad = gradient_vector(parameters, prox_sat, retain_graph=True)
             size_grad = gradient_vector(parameters, size_sat, retain_graph=True)
-            # not_nested_grad = gradient_vector(parameters, not_nested_sat, retain_graph=True)
+            not_nested_grad = gradient_vector(parameters, not_nested_sat, retain_graph=True)
 
             last_grad_metrics = {
                 "seg_norm": gradient_norm(seg_grad),
                 "prox_norm": gradient_norm(prox_grad),
                 "size_norm": gradient_norm(size_grad),
-                # "not_nested_norm": gradient_norm(not_nested_grad),
+                "not_nested_norm": gradient_norm(not_nested_grad),
                 "seg_prox_cos": cosine_similarity(seg_grad, prox_grad),
                 "seg_size_cos": cosine_similarity(seg_grad, size_grad),
-                # "seg_not_nested_cos": cosine_similarity(seg_grad, not_nested_grad),
+                "seg_not_nested_cos": cosine_similarity(seg_grad, not_nested_grad),
             }
 
             last_metrics = {
                 "seg_sat": seg_sat.item(),
                 "prox_sat": prox_sat.item(),
                 "size_sat": size_sat.item(),
-                # "not_nested_sat": not_nested_sat.item(),
+                "not_nested_sat": not_nested_sat.item(),
                 "total_sat": satisfaction.item(),
             }
 
@@ -655,7 +719,7 @@ def constraint_informed_train(model, train_loader, val_loader, args, device):
             f"seg={last_metrics['seg_sat']:.4f}, "
             f"prox={last_metrics['prox_sat']:.4f}, "
             f"size={last_metrics['size_sat']:.4f}, "
-            # f"not_nested_sat={last_metrics['not_nested_sat']:.4f}, "
+            f"not_nested_sat={last_metrics['not_nested_sat']:.4f}, "
             f"total={last_metrics['total_sat']:.4f}"
         )
         print(
@@ -663,13 +727,13 @@ def constraint_informed_train(model, train_loader, val_loader, args, device):
             f"|seg|={last_grad_metrics['seg_norm']:.4e}, "
             f"|prox|={last_grad_metrics['prox_norm']:.4e}, "
             f"|size|={last_grad_metrics['size_norm']:.4e}, "
-            # f"|not_nested|={last_grad_metrics['not_nested_norm']:.4e}"
+            f"|not_nested|={last_grad_metrics['not_nested_norm']:.4e}"
         )
         print(
             "constraint cos: "
             f"cos(seg,prox)={last_grad_metrics['seg_prox_cos']:.4f}, "
             f"cos(seg,size)={last_grad_metrics['seg_size_cos']:.4f}, "
-            # f"cos(seg,not_nested)={last_grad_metrics['seg_not_nested_cos']:.4f}"
+            f"cos(seg,not_nested)={last_grad_metrics['seg_not_nested_cos']:.4f}"
         )
         dice_score = evaluate(model, val_loader, device)
         print(f"val dice score: {dice_score:.4f}")
