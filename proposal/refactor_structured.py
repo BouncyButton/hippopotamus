@@ -5,6 +5,7 @@ import ltn
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import wandb
 from monai.apps import DecathlonDataset
 from monai.data import DataLoader
 from monai.losses import DiceLoss
@@ -49,7 +50,7 @@ def parse_args():
     )
     parser.add_argument("--root-dir", default="./tmp", help="MONAI dataset root directory.")
     parser.add_argument("--task", default="Task04_Hippocampus", help="Decathlon task identifier.")
-    parser.add_argument("--pixdim", type=float, nargs=3, default=(1.5, 1.5, 1.5), help="Resampling spacing.")
+    parser.add_argument("--pixdim", type=float, nargs=3, default=(1.5, .5, 1.5), help="Resampling spacing.")
     parser.add_argument(
         "--spatial-size",
         type=int,
@@ -59,6 +60,10 @@ def parse_args():
     )
     parser.add_argument("--num-workers", type=int, default=0, help="DataLoader workers.")
     parser.add_argument("--save-dir", default=".", help="Directory where model checkpoints are written.")
+    parser.add_argument("--wandb-project", default="hippopotamus-project", help="W&B project name.")
+    parser.add_argument("--wandb-entity", default="hippopotamus", help="W&B entity/account.")
+    parser.add_argument("--wandb-run-name", default=None, help="Optional W&B run name.")
+    parser.add_argument("--disable-wandb", action="store_true", help="Disable W&B experiment tracking.")
     parser.add_argument(
         "--load-weights",
         default='model_state_dict_ltn_fold1-tr=0.25.pth',
@@ -88,6 +93,41 @@ def parse_args():
         help="Maximum number of slices to save per sample. Use 0 to save all slices.",
     )
     return parser.parse_args()
+
+
+def make_run_name(args):
+    size = "x".join(map(str, args.spatial_size))
+    pixdim = "x".join(f"{value:g}" for value in args.pixdim)
+    return (
+        f"{args.mode}_ep{args.epochs}_bs{args.batch_size}_lr{args.lr:g}_"
+        f"wd{args.weight_decay:g}_tr{args.train_fraction:g}_size{size}_pix{pixdim}"
+    )
+
+
+def wandb_config(args):
+    config = vars(args).copy()
+    config["device"] = str(DEVICE)
+    config["spatial_size"] = list(args.spatial_size)
+    config["pixdim"] = list(args.pixdim)
+    return config
+
+
+def log_epoch_metrics(metrics):
+    if wandb.run is not None:
+        wandb.log(metrics)
+
+
+def latest_checkpoint_path(args):
+    return Path(args.save_dir) / "latest_model_weights.pth"
+
+
+def save_latest_model(model, args):
+    checkpoint_path = latest_checkpoint_path(args)
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(model.state_dict(), checkpoint_path)
+    if wandb.run is not None:
+        wandb.save(str(checkpoint_path), policy="now")
+    return checkpoint_path
 
 
 def nested(hard):
@@ -608,7 +648,7 @@ def save_validation_examples(model, val_loader, device, args, epoch):
                 saved_samples += 1
 
 
-def baseline_train(model, train_loader, val_loader, args, device, schedule='base'):
+def baseline_train(model, train_loader, val_loader, args, device, fold, schedule='base'):
     optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     steps = args.epochs * len(train_loader)
     if schedule == 'cosine':
@@ -632,12 +672,24 @@ def baseline_train(model, train_loader, val_loader, args, device, schedule='base
         dice_score = evaluate(model, val_loader, device)
         print(f"val dice score: {dice_score:.4f}")
         save_validation_examples(model, val_loader, device, args, epoch)
+        checkpoint_path = save_latest_model(model, args)
+        log_epoch_metrics(
+            {
+                "fold": fold,
+                "epoch": epoch + 1,
+                "global_epoch": (fold - 1) * args.epochs + epoch + 1,
+                "train/loss": epoch_loss / max(1, len(train_loader)),
+                "val/dice": dice_score,
+                "train/lr": optimizer.param_groups[0]["lr"],
+                "checkpoint/latest_path": str(checkpoint_path),
+            }
+        )
         if schedule == 'cosine':
             scheduler.step()
     return model
 
 
-def constraint_informed_train(model, train_loader, val_loader, args, device, schedule='base'):
+def constraint_informed_train(model, train_loader, val_loader, args, device, fold, schedule='base'):
     optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     steps = args.epochs * len(train_loader)
     if schedule == 'cosine':
@@ -738,18 +790,57 @@ def constraint_informed_train(model, train_loader, val_loader, args, device, sch
         dice_score = evaluate(model, val_loader, device)
         print(f"val dice score: {dice_score:.4f}")
         save_validation_examples(model, val_loader, device, args, epoch)
+        checkpoint_path = save_latest_model(model, args)
+        log_epoch_metrics(
+            {
+                "fold": fold,
+                "epoch": epoch + 1,
+                "global_epoch": (fold - 1) * args.epochs + epoch + 1,
+                "train/loss": epoch_loss / max(1, len(train_loader)),
+                "train/lr": optimizer.param_groups[0]["lr"],
+                "val/dice": dice_score,
+                "constraint/seg_sat": last_metrics["seg_sat"],
+                "constraint/prox_sat": last_metrics["prox_sat"],
+                "constraint/size_sat": last_metrics["size_sat"],
+                "constraint/not_nested_sat": last_metrics["not_nested_sat"],
+                "constraint/total_sat": last_metrics["total_sat"],
+                "constraint_grad/seg_norm": last_grad_metrics["seg_norm"],
+                "constraint_grad/prox_norm": last_grad_metrics["prox_norm"],
+                "constraint_grad/size_norm": last_grad_metrics["size_norm"],
+                "constraint_grad/not_nested_norm": last_grad_metrics["not_nested_norm"],
+                "constraint_grad/seg_prox_cos": last_grad_metrics["seg_prox_cos"],
+                "constraint_grad/seg_size_cos": last_grad_metrics["seg_size_cos"],
+                "constraint_grad/seg_not_nested_cos": last_grad_metrics["seg_not_nested_cos"],
+                "checkpoint/latest_path": str(checkpoint_path),
+            }
+        )
         if schedule == 'cosine':
             scheduler.step()
     return model
 
 
-def train_one_fold(model, train_loader, val_loader, args, device):
+def train_one_fold(model, train_loader, val_loader, args, device, fold):
     if args.mode == "baseline":
-        return baseline_train(model, train_loader, val_loader, args, device)
-    return constraint_informed_train(model, train_loader, val_loader, args, device)
+        return baseline_train(model, train_loader, val_loader, args, device, fold)
+    return constraint_informed_train(model, train_loader, val_loader, args, device, fold)
 
 
 def run_cross_validation(args):
+    run = None
+    if not args.disable_wandb:
+        run = wandb.init(
+            project=args.wandb_project,
+            entity=args.wandb_entity,
+            name=args.wandb_run_name or make_run_name(args),
+            config=wandb_config(args),
+            job_type="training",
+        )
+        wandb.define_metric("global_epoch")
+        wandb.define_metric("train/*", step_metric="global_epoch")
+        wandb.define_metric("val/*", step_metric="global_epoch")
+        wandb.define_metric("constraint/*", step_metric="global_epoch")
+        wandb.define_metric("constraint_grad/*", step_metric="global_epoch")
+
     dataset = build_dataset(args)
     save_dir = Path(args.save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
@@ -780,21 +871,24 @@ def run_cross_validation(args):
         model = SwinUNETR(in_channels=1, out_channels=3, use_checkpoint=True).to(DEVICE)
         if args.load_weights:
             checkpoint = torch.load(args.load_weights, map_location=DEVICE)
+            if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+                checkpoint = checkpoint["model_state_dict"]
             model.load_state_dict(checkpoint)
             print(f"loaded weights from: {args.load_weights}")
-        trained_model = train_one_fold(model, train_loader, val_loader, args, DEVICE)
-
-        checkpoint_name = (
-            f"model_state_dict_{args.mode}_fold{fold}_"
-            f"tr={args.train_fraction}_size={'x'.join(map(str, args.spatial_size))}.pth"
-        )
-        torch.save(trained_model.state_dict(), save_dir / checkpoint_name)
+        trained_model = train_one_fold(model, train_loader, val_loader, args, DEVICE, fold)
 
         fold_dice = evaluate(trained_model, val_loader, DEVICE)
         dice_scores.append(fold_dice)
         print(f"Fold {fold} dice: {fold_dice:.4f}")
+        log_epoch_metrics({"fold": fold, "fold/final_dice": fold_dice})
 
-    print(f"{args.mode} mean dice: {np.mean(dice_scores):.4f} ± {np.std(dice_scores):.4f}")
+    mean_dice = float(np.mean(dice_scores))
+    std_dice = float(np.std(dice_scores))
+    print(f"{args.mode} mean dice: {mean_dice:.4f} ± {std_dice:.4f}")
+    log_epoch_metrics({"cv/mean_dice": mean_dice, "cv/std_dice": std_dice})
+
+    if run is not None:
+        run.finish()
 
 
 def main():
