@@ -814,7 +814,7 @@ if __name__ == "__main__":
     print("dice loss time:", time.time() - t)
 
     t = time.time()
-    _ = soft_chamfer_pooled(a, pool=6)
+    _ = soft_chamfer_pooled(a, pool=8)
     print("soft chamfer time:", time.time() - t)
 
     t = time.time()
@@ -825,5 +825,9 @@ if __name__ == "__main__":
     _ = dimension(a)
 
     print("dimension time:", time.time() - t)
+
+    t = time.time()
+    _ = soft_nested(a)
+    print("nested time:", time.time() - t)
 
     main()
