@@ -175,6 +175,7 @@ def wandb_config(args):
     config["device"] = str(DEVICE)
     config["spatial_size"] = list(args.spatial_size)
     config["pixdim"] = list(args.pixdim)
+    config["tracked_constraints"] = list(AVAILABLE_CONSTRAINTS)
     return config
 
 
@@ -718,19 +719,19 @@ def metric_key(name):
     return name.replace("-", "_")
 
 
-def build_constraint_context(train_loader, args, device):
+def build_constraint_context(train_loader, constraints, device):
     context = {
         "forall": ltn.Quantifier(ltn.fuzzy_ops.AggregPMeanError(p=2), quantifier="f"),
         "sat_agg": ltn.fuzzy_ops.SatAgg(),
         "dice": ltn.Predicate(func=my_dice_loss),
     }
-    if "prox" in args.constraints:
+    if "prox" in constraints:
         context["eq"] = ltn.Predicate(func=eq_fn)
         context["min_dst"] = ltn.Function(func=soft_chamfer_pooled)
         context["zero"] = ltn.Constant(torch.tensor(0.0, device=device))
-    if "size" in args.constraints:
+    if "size" in constraints:
         context["sim_dim"] = ltn.Function(model=DimensionConstraint(train_loader).to(device))
-    if "not-nested" in args.constraints:
+    if "not-nested" in constraints:
         context["nested"] = ltn.Function(func=soft_nested)
         context["not"] = ltn.Connective(ltn.fuzzy_ops.NotStandard())
     return context
@@ -862,10 +863,13 @@ def train_one_fold(model, train_loader, val_loader, args, device, fold, schedule
     parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
 
     baseline_loss_fn = DiceLoss(to_onehot_y=True, softmax=True)
-    print("tracked constraints:", ", ".join(args.constraints) if args.constraints else "none")
+    print("tracked constraints:", ", ".join(AVAILABLE_CONSTRAINTS))
     if args.mode == "constraint-informed":
         print("active constraints:", ", ".join(args.constraints) if args.constraints else "none")
-    constraint_context = build_constraint_context(train_loader, args, device)
+    train_constraint_context = None
+    if args.mode == "constraint-informed":
+        train_constraint_context = build_constraint_context(train_loader, args.constraints, device)
+    val_constraint_context = build_constraint_context(train_loader, AVAILABLE_CONSTRAINTS, device)
 
     for epoch in range(args.epochs):
         model.train()
@@ -884,7 +888,7 @@ def train_one_fold(model, train_loader, val_loader, args, device, fold, schedule
                 satisfaction, sats = compute_constraint_satisfaction(
                     outputs,
                     labels,
-                    constraint_context,
+                    train_constraint_context,
                     args.constraints,
                 )
                 loss = 1.0 - satisfaction
@@ -908,12 +912,12 @@ def train_one_fold(model, train_loader, val_loader, args, device, fold, schedule
         val_constraint_metrics = evaluate_constraint_satisfaction(
             model,
             val_loader,
-            constraint_context,
-            args.constraints,
+            val_constraint_context,
+            AVAILABLE_CONSTRAINTS,
             device,
         )
         if val_constraint_metrics:
-            print("val constraint sats:", format_satisfaction_metrics(val_constraint_metrics, args.constraints))
+            print("val constraint sats:", format_satisfaction_metrics(val_constraint_metrics, AVAILABLE_CONSTRAINTS))
         save_validation_examples(model, val_loader, device, args, epoch)
         checkpoint_path = save_latest_model(model, args)
         log_epoch_metrics(
