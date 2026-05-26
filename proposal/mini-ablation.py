@@ -87,7 +87,7 @@ def parse_args():
     parser.add_argument("--disable-wandb", action="store_true", help="Disable W&B experiment tracking.")
     parser.add_argument(
         "--load-weights",
-        default='model_state_dict_ltn_fold1-tr=0.25.pth',
+        default=None,
         help="Optional path to a model state_dict checkpoint to load before training.",
     )
     parser.add_argument(
