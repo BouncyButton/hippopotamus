@@ -123,8 +123,6 @@ def parse_args():
         args.constraints = normalize_constraints(args.constraints)
     except ValueError as exc:
         parser.error(str(exc))
-    if args.mode == "baseline":
-        args.constraints = tuple()
     if args.fold < 1 or args.fold > args.folds:
         parser.error(f"--fold must be in the range 1..{args.folds}.")
     return args
@@ -758,6 +756,39 @@ def compute_constraint_satisfaction(outputs, labels, context, selected_constrain
     return total_sat, sats
 
 
+def satisfaction_metrics(total_sat, sats, selected_constraints):
+    metrics = {
+        f"{metric_key(name)}_sat": sats[name].item()
+        for name in ("seg", *selected_constraints)
+    }
+    metrics["total_sat"] = total_sat.item()
+    return metrics
+
+
+def evaluate_constraint_satisfaction(model, data_loader, context, selected_constraints, device):
+    model.eval()
+    totals = {}
+    sample_count = 0
+
+    with torch.no_grad():
+        for batch in data_loader:
+            inputs = batch["image"].to(device)
+            labels = batch["label"].to(device)
+            batch_size = inputs.shape[0]
+
+            outputs = model(inputs)
+            total_sat, sats = compute_constraint_satisfaction(outputs, labels, context, selected_constraints)
+            batch_metrics = satisfaction_metrics(total_sat, sats, selected_constraints)
+
+            for name, value in batch_metrics.items():
+                totals[name] = totals.get(name, 0.0) + value * batch_size
+            sample_count += batch_size
+
+    if sample_count == 0:
+        return {}
+    return {name: value / sample_count for name, value in totals.items()}
+
+
 def compute_gradient_metrics(parameters, sats, selected_constraints):
     ordered_names = ("seg", *selected_constraints)
     grads = {}
@@ -792,7 +823,18 @@ def format_gradient_cosines(metrics, selected_constraints):
     )
 
 
-def build_log_metrics(args, fold, epoch, epoch_loss, optimizer, dice_score, checkpoint_path, last_metrics, last_grad_metrics):
+def build_log_metrics(
+    args,
+    fold,
+    epoch,
+    epoch_loss,
+    optimizer,
+    dice_score,
+    checkpoint_path,
+    last_metrics,
+    last_grad_metrics,
+    val_constraint_metrics,
+):
     metrics = {
         "fold": fold,
         "epoch": epoch + 1,
@@ -806,6 +848,8 @@ def build_log_metrics(args, fold, epoch, epoch_loss, optimizer, dice_score, chec
         metrics[f"constraint/{name}"] = value
     for name, value in last_grad_metrics.items():
         metrics[f"constraint_grad/{name}"] = value
+    for name, value in val_constraint_metrics.items():
+        metrics[f"val_constraint/{name}"] = value
     return metrics
 
 
@@ -818,10 +862,10 @@ def train_one_fold(model, train_loader, val_loader, args, device, fold, schedule
     parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
 
     baseline_loss_fn = DiceLoss(to_onehot_y=True, softmax=True)
-    constraint_context = None
+    print("tracked constraints:", ", ".join(args.constraints) if args.constraints else "none")
     if args.mode == "constraint-informed":
         print("active constraints:", ", ".join(args.constraints) if args.constraints else "none")
-        constraint_context = build_constraint_context(train_loader, args, device)
+    constraint_context = build_constraint_context(train_loader, args, device)
 
     for epoch in range(args.epochs):
         model.train()
@@ -845,11 +889,7 @@ def train_one_fold(model, train_loader, val_loader, args, device, fold, schedule
                 )
                 loss = 1.0 - satisfaction
                 last_grad_metrics = compute_gradient_metrics(parameters, sats, args.constraints)
-                last_metrics = {
-                    f"{metric_key(name)}_sat": sats[name].item()
-                    for name in ("seg", *args.constraints)
-                }
-                last_metrics["total_sat"] = satisfaction.item()
+                last_metrics = satisfaction_metrics(satisfaction, sats, args.constraints)
 
             loss.backward()
             optimizer.step()
@@ -865,6 +905,15 @@ def train_one_fold(model, train_loader, val_loader, args, device, fold, schedule
                 print("constraint cos:", grad_cosines)
         dice_score = evaluate(model, val_loader, device)
         print(f"val dice score: {dice_score:.4f}")
+        val_constraint_metrics = evaluate_constraint_satisfaction(
+            model,
+            val_loader,
+            constraint_context,
+            args.constraints,
+            device,
+        )
+        if val_constraint_metrics:
+            print("val constraint sats:", format_satisfaction_metrics(val_constraint_metrics, args.constraints))
         save_validation_examples(model, val_loader, device, args, epoch)
         checkpoint_path = save_latest_model(model, args)
         log_epoch_metrics(
@@ -878,6 +927,7 @@ def train_one_fold(model, train_loader, val_loader, args, device, fold, schedule
                 checkpoint_path,
                 last_metrics,
                 last_grad_metrics,
+                val_constraint_metrics,
             )
         )
         if scheduler is not None:
@@ -901,6 +951,7 @@ def run_single_fold_experiment(args):
         wandb.define_metric("val/*", step_metric="global_epoch")
         wandb.define_metric("constraint/*", step_metric="global_epoch")
         wandb.define_metric("constraint_grad/*", step_metric="global_epoch")
+        wandb.define_metric("val_constraint/*", step_metric="global_epoch")
 
     dataset = build_dataset(args)
     save_dir = Path(args.save_dir)
