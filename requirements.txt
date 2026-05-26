@@ -2,3 +2,4 @@ absl-py
 monai
 nibabel
 wandb
+LTNtorch
